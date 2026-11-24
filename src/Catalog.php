@@ -23,6 +23,16 @@ final class Catalog
         return Works::sort($works);
     }
 
+    /** slug => available|reserved|sold für alle sichtbaren Werke, unabhängig von SHOW_SOLD (für /api/status). */
+    public static function statusMap(): array
+    {
+        $out = [];
+        foreach (Db::all('SELECT w.slug, w.status, ' . self::COLS . ' FROM werke w WHERE w.aktiv = 1 AND w.sichtbar = 1') as $r) {
+            $out[$r['slug']] = $r['status'] === 'sold' ? 'sold' : ((int) $r['ist_reserviert'] ? 'reserved' : 'available');
+        }
+        return $out;
+    }
+
     public static function bySlug(string $slug): ?array
     {
         $row = Db::one('SELECT ' . self::COLS . ' FROM werke w WHERE w.slug = ? AND w.aktiv = 1 AND w.sichtbar = 1', [$slug]);

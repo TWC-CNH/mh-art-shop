@@ -169,10 +169,25 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('erika@example.test', $thanks->body);
         $this->assertSame('no-store', $thanks->header('cache-control'));
         // geteilter Link ohne das Cookie des Käufers: keine Daten, keine Stripe-Abfrage, Weiterleitung zur Startseite
-        $shared = (new Client())->get("/danke?session_id=$sid");
-        $this->assertSame(303, $shared->status);
-        $this->assertSame('/', $shared->header('location'));
+        // Anderer Browser (z. B. Rückkehr aus der Bank-App) bzw. geteilter Link: Bestätigung ja, persönliche Daten nein
+        $shared = (new Client('198.51.100.97'))->get("/danke?session_id=$sid");
+        $this->assertSame(200, $shared->status);
+        $this->assertStringContainsString('cool', strtolower($shared->body));
         $this->assertStringNotContainsString('Erika', $shared->body);
+        $this->assertStringNotContainsString('erika@example.test', $shared->body);
+        $this->assertStringNotContainsString('mh-conversion', $shared->body);
+        // Zweiter Tab: Cookie gehört zu einem anderen Kauf – ebenfalls Bestätigung ohne Daten
+        $other = new Client('198.51.100.98');
+        $other->request('GET', '/', null, ['Cookie: mh_co=cs_test_anderer_kauf']);
+        $tab = $other->request('GET', "/danke?session_id=$sid", null, ['Cookie: mh_co=cs_test_anderer_kauf']);
+        $this->assertSame(200, $tab->status);
+        $this->assertStringNotContainsString('Erika', $tab->body);
+        // Erfundene IDs ohne Cookie: nach 20 Versuchen je IP keine Stripe-Abfragen mehr
+        $prober = new Client('198.51.100.99');
+        for ($i = 0; $i < 20; $i++) {
+            $prober->get('/danke?session_id=cs_test_erfunden' . $i);
+        }
+        $this->assertSame('/', $prober->get("/danke?session_id=$sid")->header('location'));
     }
 
     public function testAblaufUndGescheiterteZahlungGebenFrei(): void

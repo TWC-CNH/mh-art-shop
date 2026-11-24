@@ -59,6 +59,9 @@ $check('Upload-Ordner beschreibbar', is_dir($cfg['uploadDir']) && is_writable($c
 $check('Schutz im Upload-Ordner (.htaccess)', is_file($cfg['uploadDir'] . '/.htaccess'));
 $check('STRIPE_SECRET_KEY gesetzt', $cfg['stripeSecretKey'] !== '', 'ohne Schlüssel ist Kaufen gesperrt');
 if ($cfg['stripeSecretKey'] !== '') {
+    $check('STRIPE_SECRET_KEY ist ein echter Schlüssel', (bool) preg_match('/^(sk|rk)_(test|live)_[A-Za-z0-9]{10,}$/', $cfg['stripeSecretKey']), 'Platzhalter aus .env.example ersetzen');
+}
+if ($cfg['stripeSecretKey'] !== '') {
     echo '  info  Stripe-Modus: ' . (str_starts_with($cfg['stripeSecretKey'], 'sk_live_') ? 'LIVE' : 'Test') . "\n";
     $check('STRIPE_WEBHOOK_SECRET gesetzt', $cfg['stripeWebhookSecret'] !== '', 'Webhook im Stripe-Dashboard anlegen');
 }

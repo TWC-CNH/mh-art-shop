@@ -7,6 +7,7 @@ use App\Catalog;
 use App\Config;
 use App\Http;
 use App\Log;
+use App\RateLimit;
 use App\View\Legal;
 use App\View\Render;
 use App\Works;
@@ -34,12 +35,15 @@ final class ShopController
         $session = null;
         $work = null;
         $s = CheckoutController::stripe();
-        // Nur der Browser, der den Kauf gestartet hat (Cookie), bekommt die Seite – sonst gar keine Stripe-Abfrage
+        // Eigener Browser (Cookie passt): volle Bestätigung. Sonst – z. B. Rückkehr aus der Bank-App in einem anderen
+        // Browser oder Kauf in einem zweiten Tab – nur eine Bestätigung ohne persönliche Daten und ohne Conversion.
+        // Abfragen bei Stripe ohne passendes Cookie sind je IP begrenzt (keine Stripe-Last durch erfundene IDs).
         $mine = Http::cookie(CheckoutController::SESSION_COOKIE);
-        if ($mine === '' || !hash_equals($mine, $id)) {
+        $own = $mine !== '' && hash_equals($mine, $id);
+        if (!preg_match('/^cs_[A-Za-z0-9_]+$/', $id) || (!$own && !RateLimit::hit('danke-ip', RateLimit::clientIp(), 20, 3600)['ok'])) {
             Http::redirect('/');
         }
-        if ($s && preg_match('/^cs_[A-Za-z0-9_]+$/', $id)) {
+        if ($s) {
             try {
                 $session = $s->checkout->sessions->retrieve($id)->toArray();
                 if (!empty($session['metadata']['slug'])) {
@@ -55,6 +59,10 @@ final class ShopController
         if (($session['status'] ?? '') !== 'complete') {
             $slug = $session['metadata']['slug'] ?? '';
             Http::redirect(is_string($slug) && $slug !== '' && $work ? '/werk/' . rawurlencode($slug) : '/');
+        }
+        if (!$own) {
+            // Bestätigung ja (das Werk gehört Ihnen), aber Name, E-Mail, Betrag und Conversion nur im eigenen Browser
+            $session = ['status' => 'complete', 'metadata' => $session['metadata'] ?? []];
         }
         Http::html(Render::thanks($session, $work));
     }
@@ -76,10 +84,8 @@ final class ShopController
     /** Aktueller Status aller Werke; das Frontend aktualisiert damit Badges und Kauf-Button. */
     public static function status(): never
     {
-        $status = [];
-        foreach (Catalog::list() as $w) {
-            $status[$w['slug']] = $w['status'];
-        }
+        // Auch verkaufte Werke (bei SHOW_SOLD=false sonst nicht enthalten): gecachte Seiten sperren sonst den Kauf-Knopf nicht
+        $status = Catalog::statusMap();
         Http::jsonOut(['status' => (object) $status, 'at' => gmdate('Y-m-d\TH:i:s\Z')]);
     }
 

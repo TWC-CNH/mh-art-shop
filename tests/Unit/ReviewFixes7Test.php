@@ -54,6 +54,20 @@ final class ReviewFixes7Test extends TestCase
         $this->assertNull(\App\AtelierAuth::attempt($name, Stack::PASSWORD, \App\Totp::code($secret, $now + 1)), 'der vorgehende Code nochmal');
     }
 
+    /** Dreizehntes Review: Status-API kennt verkaufte Werke auch bei SHOW_SOLD=false. */
+    public function testStatusKarteMitVerkauftenWerken(): void
+    {
+        putenv('SHOW_SOLD=false');
+        \App\Config::reset();
+        try {
+            Db::run("UPDATE werke SET status = 'sold' WHERE slug = 'nacht'");
+            $this->assertSame('sold', Catalog::statusMap()['nacht']);
+        } finally {
+            putenv('SHOW_SOLD=true');
+            \App\Config::reset();
+        }
+    }
+
     public function testKontingentPlatzLaesstSichZuruecknehmen(): void
     {
         $a = RateLimit::hit('test-undo', 'x@example.test', 2, 600);
