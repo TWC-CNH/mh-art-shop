@@ -108,7 +108,7 @@ final class Config
             'limits' => [
                 'checkoutPerIp' => self::num('LIMIT_CHECKOUT_PER_IP', '3', 1),
                 'loginFailsPerIp' => self::num('LIMIT_LOGIN_FAILS_PER_IP', '10', 1),
-                'loginWindowMin' => self::num('LIMIT_LOGIN_WINDOW_MIN', '15', 1),
+                'loginWindowMin' => min(1440, self::num('LIMIT_LOGIN_WINDOW_MIN', '15', 1)), // höchstens 1 Tag (Zähler leben 2 Tage)
                 'withdrawPerIp' => self::num('LIMIT_WITHDRAW_PER_IP', '5', 1),
                 'withdrawMailsPerRecipient' => self::num('LIMIT_WITHDRAW_MAILS_PER_RECIPIENT', '2', 1),
                 'inquiryPerIp' => self::num('LIMIT_INQUIRY_PER_IP', '10', 1),

@@ -38,7 +38,8 @@ final class CheckoutController
     /** Eigene Bezahlvorgänge dieses Browsers (Cookie, höchstens 5, durch Punkte getrennt). */
     public static function mySessions(): array
     {
-        return array_values(array_filter(explode('.', Http::cookie(self::SESSION_COOKIE)), fn ($s) => (bool) preg_match('/^cs_[A-Za-z0-9_]+$/', $s)));
+        // höchstens die letzten 5 – das Cookie kommt vom Browser und könnte beliebig lang sein
+        return array_slice(array_values(array_filter(explode('.', Http::cookie(self::SESSION_COOKIE)), fn ($s) => (bool) preg_match('/^cs_[A-Za-z0-9_]+$/', $s))), -5);
     }
 
     public static function isMine(string $sessionId): bool
@@ -54,6 +55,7 @@ final class CheckoutController
     private static function rememberSessions(array $ids): void
     {
         $ids = array_slice(array_values(array_unique($ids)), -5);
+        Http::setCookie(self::SESSION_COOKIE, '', -1, '/api', 'Lax'); // Überbleibsel mit Pfad /api (frühere Fassung) entfernen
         Http::setCookie(self::SESSION_COOKIE, implode('.', $ids), $ids ? Config::get()['reserveMinutes'] * 60 + 900 : -1, '/', 'Lax');
     }
 
@@ -347,6 +349,9 @@ final class CheckoutController
             $werkId = $slug !== '' ? (int) (Db::one('SELECT id FROM werke WHERE slug = ?', [$slug])['id'] ?? 0) : 0;
             if (!$werkId) {
                 Log::error("Webhook {$event->type} ohne zuordenbares Werk (Sitzung " . ($obj->id ?? '?') . '). Bitte im Stripe-Dashboard prüfen.');
+            } elseif (!empty($obj->id)) {
+                // Bestellzeile nachtragen, damit Betrag und Zahlungsdatum auch für solche Käufe in der Datenbank stehen
+                Db::run('INSERT IGNORE INTO bestellungen (stripe_session_id, werk_id, betrag_cent) VALUES (?, ?, ?)', [(string) $obj->id, $werkId, $obj->amount_total ?? null]);
             }
         }
         $sid = (string) ($obj->id ?? '');

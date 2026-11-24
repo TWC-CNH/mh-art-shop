@@ -57,7 +57,8 @@ final class Mailer
             $m->send();
             return ['sent' => true, 'reason' => ''];
         } catch (\Throwable $e) {
-            Log::error('E-Mail-Versand fehlgeschlagen: ' . $m->ErrorInfo);
+            // ErrorInfo kann Empfängeradressen enthalten: vor dem Protokollieren entfernen (keine personenbezogenen Daten ins Log)
+            Log::error('E-Mail-Versand fehlgeschlagen: ' . preg_replace('/[^\s<>"@]+@[^\s<>",;]+/', '[Adresse]', $m->ErrorInfo));
             return ['sent' => false, 'reason' => 'Versand fehlgeschlagen'];
         }
     }

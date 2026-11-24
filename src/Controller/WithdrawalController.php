@@ -50,13 +50,16 @@ HTML,
         ]);
     }
 
-    private static function donePage(array $rec, bool $mailed): string
+    private static function donePage(array $rec, bool $mailed, bool $direct = false): string
     {
         $cfg = Config::get();
         $mail = e($cfg['contactEmail']);
         $note = $mailed
             ? 'Die Eingangsbestätigung mit diesen Angaben ist an <strong>' . e($rec['email']) . '</strong> unterwegs.'
             : 'Die Bestätigungs-E-Mail konnte gerade nicht versendet werden. Bitte speichern oder drucken Sie diese Seite als Nachweis. Ihr Widerruf ist trotzdem eingegangen.';
+        if ($direct) {
+            $note .= ' Bitte laden Sie diese Seite nicht neu – sonst wird der Widerruf ein zweites Mal abgeschickt.';
+        }
         return Render::layout([
             'title' => 'Widerruf eingegangen',
             'canonical' => '/vertrag-widerrufen',
@@ -179,7 +182,7 @@ HTML,
             // Nach dem Absenden weiterleiten: Neuladen oder „Zurück/Vor“ schicken den Widerruf nicht erneut ab
             Http::redirect('/vertrag-widerrufen?ref=' . rawurlencode($rec['ref']) . '&t=' . self::receiptToken($rec['ref']));
         }
-        Http::html(self::donePage($rec, $mail['sent']));
+        Http::html(self::donePage($rec, $mail['sent'], true)); // nicht gespeichert: direkt anzeigen, mit Hinweis
     }
 
     /** Geheimer Prüfwert für den Link zur Eingangsbestätigung (nur wer abgeschickt hat, kennt ihn). */
