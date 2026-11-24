@@ -97,7 +97,7 @@ final class Crypto
         }
         $secret = $base !== null
             ? hash_hkdf('sha256', $base, 32, 'mh-pseudonym')
-            : ($c['atelierPasswordHash'] ?: ($c['stripeSecretKey'] ?: 'mh-local-dev'));
+            : ($c['stripeSecretKey'] ?: 'mh-local-dev');
         return hash_hmac('sha256', $purpose . '|' . mb_strtolower($value, 'UTF-8'), $secret);
     }
 

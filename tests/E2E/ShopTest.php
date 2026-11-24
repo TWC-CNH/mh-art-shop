@@ -213,12 +213,33 @@ final class ShopTest extends TestCase
     public function testAtelierLoginSchuetzt(): void
     {
         $c = new Client('192.0.2.10');
-        $this->assertStringContainsString('name="passwort"', $c->get('/atelier')->body);
-        $r = $c->post('/atelier/login', ['passwort' => 'falsch']);
+        $this->assertStringContainsString('noch nicht eingerichtet', $c->get('/atelier')->body, 'ohne Benutzer kein Login');
+        Stack::createUser();
+        $page = $c->get('/atelier')->body;
+        $this->assertStringContainsString('name="benutzer"', $page);
+        $this->assertStringContainsString('name="passwort"', $page);
+        $this->assertStringContainsString('autocomplete="one-time-code"', $page);
+        $r = $c->post('/atelier/login', ['benutzer' => 'niemand', 'passwort' => 'falsch', 'code' => '123456']);
         $this->assertSame(401, $r->status);
-        $this->assertStringContainsString('Passwort stimmt nicht', $r->body);
+        $this->assertStringContainsString('Anmeldung fehlgeschlagen', $r->body);
         $this->assertNull($c->cookie('mh_atelier'));
-        $this->assertSame(403, $c->post('/atelier/login', ['passwort' => Stack::PASSWORD], ['Origin: https://boese.example'])->status);
+        $this->assertSame(403, $c->post('/atelier/login', Stack::credentials(), ['Origin: https://boese.example'])->status);
+
+        // Zwei-Faktor: richtiges Passwort ohne gültigen Code reicht nicht, ein Code gilt nur einmal
+        $user = Stack::createUser();
+        $ok = Stack::credentials($user);
+        $wrong = ['code' => $ok['code'] === '000000' ? '111111' : '000000'] + $ok;
+        $this->assertSame(401, (new Client('192.0.2.14'))->post('/atelier/login', $wrong)->status);
+        $this->assertSame(401, (new Client('192.0.2.14'))->post('/atelier/login', ['passwort' => 'falsch-falsch'] + $ok)->status);
+        $first = new Client('192.0.2.15');
+        $this->assertSame(303, $first->post('/atelier/login', $ok)->status);
+        $this->assertStringContainsString(e($user[0]), $first->get('/atelier')->body);
+        $this->assertSame(401, (new Client('192.0.2.16'))->post('/atelier/login', $ok)->status, 'derselbe Code ein zweites Mal');
+
+        // gesperrter Benutzer ist sofort abgemeldet
+        Stack::applyToProcess();
+        \App\AtelierAuth::setActive($user[0], false);
+        $this->assertStringContainsString('name="passwort"', $first->get('/atelier')->body);
         $this->assertSame(401, $c->post('/atelier/upload', ['csrf' => 'x'])->status);
         $this->assertSame(401, $c->post('/atelier/speichern', ['titel' => 'X'])->status);
     }
@@ -226,7 +247,7 @@ final class ShopTest extends TestCase
     private static function login(string $ip): array
     {
         $c = new Client($ip);
-        $r = $c->post('/atelier/login', ['passwort' => Stack::PASSWORD]);
+        $r = $c->post('/atelier/login', Stack::credentials());
         if ($r->status !== 303) {
             throw new \RuntimeException('Login fehlgeschlagen: ' . $r->status);
         }
@@ -455,13 +476,13 @@ final class ShopTest extends TestCase
         // Atelier: nach 3 Fehlversuchen gesperrt, auch für das richtige Passwort; andere IP nicht betroffen
         $bad = new Client('203.0.113.20');
         for ($i = 0; $i < 3; $i++) {
-            $this->assertSame(401, $bad->post('/atelier/login', ['passwort' => 'falsch'])->status);
+            $this->assertSame(401, $bad->post('/atelier/login', ['benutzer' => 'x', 'passwort' => 'falsch', 'code' => '000000'])->status);
         }
-        $locked = $bad->post('/atelier/login', ['passwort' => Stack::PASSWORD]);
+        $locked = $bad->post('/atelier/login', Stack::credentials());
         $this->assertSame(429, $locked->status);
         $this->assertStringContainsString('Zu viele Fehlversuche', $locked->body);
         $this->assertNull($bad->cookie('mh_atelier'));
-        $this->assertSame(303, (new Client('203.0.113.21'))->post('/atelier/login', ['passwort' => Stack::PASSWORD])->status);
+        $this->assertSame(303, (new Client('203.0.113.21'))->post('/atelier/login', Stack::credentials())->status);
 
         // Widerruf: höchstens 5 je IP und Stunde
         $w = new Client('203.0.113.30');

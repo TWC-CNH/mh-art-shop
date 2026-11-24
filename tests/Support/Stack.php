@@ -53,7 +53,6 @@ final class Stack
             'STRIPE_WEBHOOK_SECRET' => self::WEBHOOK_SECRET,
             'DATA_ENCRYPTION_KEY' => str_repeat('a', 64),
             'DATA_ENCRYPTION_KEY_OLD' => '',
-            'ATELIER_PASSWORD_HASH' => password_hash(self::PASSWORD, PASSWORD_BCRYPT, ['cost' => 4]),
             'TRUSTED_PROXIES' => '127.0.0.1', // Tests simulieren verschiedene Besucher-IPs über X-Forwarded-For
             'MAIL_CAPTURE_DIR' => self::$tmp . '/mails',
             'UPLOAD_DIR' => self::$tmp . '/bilder',
@@ -139,6 +138,21 @@ final class Stack
             proc_close($p);
         }
         self::$procs = [];
+    }
+
+    /** Legt einen Atelier-Benutzer mit Passwort und 2FA an. @return array{0:string,1:string} Name und TOTP-Geheimnis */
+    public static function createUser(): array
+    {
+        self::applyToProcess();
+        $name = 'test' . bin2hex(random_bytes(4));
+        return [$name, \App\AtelierAuth::saveUser($name, self::PASSWORD)];
+    }
+
+    /** Anmeldedaten mit gültigem Code (legt ohne Angabe einen neuen Benutzer an). */
+    public static function credentials(?array $user = null): array
+    {
+        [$name, $secret] = $user ?? self::createUser();
+        return ['benutzer' => $name, 'passwort' => self::PASSWORD, 'code' => \App\Totp::code($secret, \App\Totp::currentStep())];
     }
 
     /** Alle bisher "versendeten" Mails (MAIL_CAPTURE_DIR). */

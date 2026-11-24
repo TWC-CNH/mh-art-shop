@@ -36,7 +36,7 @@ final class AtelierController
 <body class="atelier-body">
 <a class="skip" href="#inhalt">Zum Inhalt</a>
 <header class="at-head"><a href="/atelier" class="at-brand"><img src="/assets/logo-mhart.png" alt="MH ART" height="34"> <span>Atelier</span></a>
-<nav><a href="/" target="_blank" rel="noopener">Shop ansehen ↗</a></nav></header>
+<nav>' . (AtelierAuth::userName() !== '' ? '<span class="muted">' . e(AtelierAuth::userName()) . '</span> · ' : '') . '<a href="/" target="_blank" rel="noopener">Shop ansehen ↗</a></nav></header>
 <main class="at-main" id="inhalt">' . $body . '</main>
 <script src="/assets/atelier.js?v=a6" defer></script></body></html>';
         exit;
@@ -50,14 +50,16 @@ final class AtelierController
     private static function loginPage(string $error = '', int $status = 0): never
     {
         if (!AtelierAuth::configured()) {
-            self::page('Atelier', '<section class="at-login"><h1 class="display">Atelier</h1><p>Das Atelier ist noch nicht eingerichtet. Bitte auf dem Server <code>ATELIER_PASSWORD_HASH</code> in der <code>.env</code> setzen (erzeugen mit <code>php bin/atelier-password.php</code>).</p></section>');
+            self::page('Atelier', '<section class="at-login"><h1 class="display">Atelier</h1><p>Das Atelier ist noch nicht eingerichtet. Bitte auf dem Server einen Benutzer anlegen: <code>php bin/atelier-user.php anlegen &lt;name&gt;</code></p></section>');
         }
         self::page('Anmelden', '<section class="at-login">
     <p class="eyebrow">MH ART</p><h1 class="display">Atelier</h1>
     <p class="muted">Hier verwalten Sie Ihre Werke, Fotos und Preise.</p>
     ' . ($error !== '' ? '<p class="at-error">' . e($error) . '</p>' : '') . '
     <form method="post" action="/atelier/login" class="at-form">
-      <label class="field"><span>Passwort</span><input type="password" name="passwort" required autocomplete="current-password" autofocus></label>
+      <label class="field"><span>Benutzername</span><input name="benutzer" required autocomplete="username" autocapitalize="none" spellcheck="false" autofocus></label>
+      <label class="field"><span>Passwort</span><input type="password" name="passwort" required autocomplete="current-password"></label>
+      <label class="field"><span>Code aus der Authenticator-App</span><input name="code" required inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" aria-describedby="code-hint"><small id="code-hint">6 Ziffern, wechselt alle 30 Sekunden</small></label>
       <button class="btn btn--wide" type="submit">Anmelden</button>
     </form></section>', $status ?: ($error !== '' ? 401 : 200));
     }
@@ -524,13 +526,21 @@ final class AtelierController
             if (!RateLimit::hit('login', $ip, $cfg['limits']['loginFailsPerIp'], $win)['ok']) {
                 self::loginPage("Zu viele Fehlversuche. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
             }
-            if (AtelierAuth::checkPassword(Http::post('passwort', 500))) {
+            // zusätzlich je Benutzername, gegen verteilte Versuche von vielen IPs
+            $name = mb_strtolower(trim(Http::post('benutzer', 60)));
+            if (!RateLimit::hit('login-user', $name, $cfg['limits']['loginFailsPerIp'] * 2, $win)['ok']) {
+                self::loginPage("Zu viele Fehlversuche für diesen Zugang. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
+            }
+            $user = AtelierAuth::attempt($name, Http::post('passwort', 500), Http::post('code', 10));
+            if ($user) {
                 RateLimit::reset('login', $ip);
-                AtelierAuth::login();
+                RateLimit::reset('login-user', $name);
+                AtelierAuth::login($user);
                 Http::redirect('/atelier');
             }
             usleep(800000);
-            self::loginPage('Das Passwort stimmt nicht.');
+            // bewusst ohne Hinweis, welcher der drei Werte falsch war
+            self::loginPage('Anmeldung fehlgeschlagen. Bitte Benutzername, Passwort und Code prüfen.');
         }
 
         if (!AtelierAuth::isLoggedIn()) {

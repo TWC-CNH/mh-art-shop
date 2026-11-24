@@ -4,68 +4,107 @@ declare(strict_types=1);
 namespace App;
 
 /**
- * Anmeldung im Atelier: ein Passwort (nur sein Argon2id-Hash steht in ATELIER_PASSWORD_HASH).
- * Nach der Anmeldung bekommt das Gerät ein zufälliges Token als Cookie; in der Datenbank steht nur dessen Hash.
- * Abmelden löscht den Eintrag serverseitig; ein neues Passwort meldet alle Geräte ab. Formulare tragen ein CSRF-Token, das vom Sitzungstoken abgeleitet ist.
+ * Anmeldung im Atelier: Benutzername, Passwort (Argon2id) und Zwei-Faktor-Code (TOTP) – alle drei nötig.
+ * Benutzer werden per SSH mit bin/atelier-user.php angelegt; das TOTP-Geheimnis steht nur verschlüsselt in der Datenbank.
+ *
+ * Nach der Anmeldung bekommt das Gerät ein zufälliges Token als Cookie ("<benutzer-id>.<token>"). In der Datenbank
+ * steht nur ein HMAC des Tokens, gebunden an den Passwort-Hash des Benutzers: Ein neues Passwort meldet alle Geräte
+ * dieses Benutzers ab, ein deaktivierter Benutzer ist sofort draußen. Formulare tragen ein CSRF-Token.
  */
 final class AtelierAuth
 {
     public const COOKIE = 'mh_atelier';
     private const DAYS = 30;
     private static ?string $token = null;
+    private static ?array $user = null;
 
+    /** Gibt es mindestens einen aktiven Benutzer mit eingerichteter Zwei-Faktor-Anmeldung? */
     public static function configured(): bool
     {
-        return Config::get()['atelierPasswordHash'] !== '';
+        return (bool) Db::one('SELECT 1 FROM atelier_benutzer WHERE aktiv = 1 AND totp_enc IS NOT NULL LIMIT 1');
     }
 
-    public static function checkPassword(string $pw): bool
+    private static function tokenHash(string $token, string $passwordHash): string
     {
-        $hash = Config::get()['atelierPasswordHash'];
-        // Auch ohne eingerichtetes Passwort gleich lange rechnen (kein Zeitunterschied als Hinweis)
-        return $hash !== '' && password_verify($pw, $hash);
+        return hash_hmac('sha256', $token, $passwordHash);
     }
 
     /**
-     * Hash des Sitzungstokens, gebunden an den aktuellen Passwort-Hash: Wird ATELIER_PASSWORD_HASH geändert
-     * (z. B. nach einem Verdacht auf ein bekannt gewordenes Passwort), sind alle bestehenden Anmeldungen ungültig.
+     * Prüft Benutzer, Passwort und Code. Liefert den Benutzer oder null.
+     * Rechnet auch bei unbekanntem Benutzer ein Passwort-Hashing, damit die Antwortzeit nichts verrät.
      */
-    private static function tokenHash(string $token): string
+    public static function attempt(string $name, string $password, string $code): ?array
     {
-        return hash_hmac('sha256', $token, Config::get()['atelierPasswordHash']);
+        $u = Db::one('SELECT * FROM atelier_benutzer WHERE benutzer = ? AND aktiv = 1', [mb_strtolower(trim($name))]);
+        $pwOk = password_verify($password, $u['passwort_hash'] ?? self::hashPassword(bin2hex(random_bytes(8))));
+        if (!$u || !$pwOk || $u['totp_enc'] === null) {
+            return null;
+        }
+        try {
+            $secret = Crypto::decrypt($u['totp_enc'], 'atelier_benutzer/totp/' . $u['id'])['secret'];
+        } catch (\Throwable $e) {
+            Log::error('2FA-Geheimnis nicht lesbar für Benutzer ' . $u['id'] . ': ' . $e->getMessage());
+            return null;
+        }
+        $step = Totp::verify($secret, $code, $u['totp_letzter_schritt'] !== null ? (int) $u['totp_letzter_schritt'] : null);
+        if ($step === null) {
+            return null;
+        }
+        // Zeitschritt atomar verbrauchen: derselbe Code funktioniert kein zweites Mal
+        $used = Db::run('UPDATE atelier_benutzer SET totp_letzter_schritt = ?, letzter_login = UTC_TIMESTAMP() WHERE id = ? AND (totp_letzter_schritt IS NULL OR totp_letzter_schritt < ?)', [$step, $u['id'], $step]);
+        return $used === 1 ? $u : null;
     }
 
-    public static function login(): void
+    public static function login(array $user): void
     {
         $token = bin2hex(random_bytes(32));
-        Db::run('INSERT INTO atelier_sessions (token_hash, laeuft_ab) VALUES (?, ?)', [self::tokenHash($token), Db::now(self::DAYS * 86400)]);
-        Http::setCookie(self::COOKIE, $token, self::DAYS * 86400, '/atelier', 'Strict');
+        Db::run('INSERT INTO atelier_sessions (token_hash, benutzer_id, laeuft_ab) VALUES (?, ?, ?)', [self::tokenHash($token, $user['passwort_hash']), $user['id'], Db::now(self::DAYS * 86400)]);
+        Http::setCookie(self::COOKIE, $user['id'] . '.' . $token, self::DAYS * 86400, '/atelier', 'Strict');
         self::$token = $token;
+        self::$user = $user;
+    }
+
+    /** @return array{0:int,1:string}|null Benutzer-ID und Token aus dem Cookie */
+    private static function parseCookie(): ?array
+    {
+        if (!preg_match('/^(\d{1,10})\.([0-9a-f]{64})$/', Http::cookie(self::COOKIE), $m)) {
+            return null;
+        }
+        return [(int) $m[1], $m[2]];
     }
 
     public static function logout(): void
     {
-        $t = Http::cookie(self::COOKIE);
-        if ($t !== '') {
-            Db::run('DELETE FROM atelier_sessions WHERE token_hash = ?', [self::tokenHash($t)]);
+        if ($c = self::parseCookie()) {
+            $u = Db::one('SELECT passwort_hash FROM atelier_benutzer WHERE id = ?', [$c[0]]);
+            if ($u) {
+                Db::run('DELETE FROM atelier_sessions WHERE token_hash = ?', [self::tokenHash($c[1], $u['passwort_hash'])]);
+            }
         }
         Http::setCookie(self::COOKIE, '', -1, '/atelier', 'Strict');
     }
 
     public static function isLoggedIn(): bool
     {
-        if (!self::configured()) {
+        $c = self::parseCookie();
+        if (!$c) {
             return false;
         }
-        $t = Http::cookie(self::COOKIE);
-        if (!preg_match('/^[0-9a-f]{64}$/', $t)) {
+        $u = Db::one('SELECT * FROM atelier_benutzer WHERE id = ? AND aktiv = 1', [$c[0]]);
+        if (!$u) {
             return false;
         }
-        $ok = (bool) Db::one('SELECT 1 FROM atelier_sessions WHERE token_hash = ? AND laeuft_ab > UTC_TIMESTAMP()', [self::tokenHash($t)]);
+        $ok = (bool) Db::one('SELECT 1 FROM atelier_sessions WHERE token_hash = ? AND benutzer_id = ? AND laeuft_ab > UTC_TIMESTAMP()', [self::tokenHash($c[1], $u['passwort_hash']), $u['id']]);
         if ($ok) {
-            self::$token = $t;
+            self::$token = $c[1];
+            self::$user = $u;
         }
         return $ok;
+    }
+
+    public static function userName(): string
+    {
+        return (string) (self::$user['benutzer'] ?? '');
     }
 
     public static function csrfToken(): string
@@ -83,5 +122,55 @@ final class AtelierAuth
     public static function purge(): int
     {
         return Db::run('DELETE FROM atelier_sessions WHERE laeuft_ab <= UTC_TIMESTAMP()');
+    }
+
+    // ---------- Benutzerverwaltung (bin/atelier-user.php) ----------
+
+    public static function hashPassword(string $pw): string
+    {
+        return password_hash($pw, defined('PASSWORD_ARGON2ID') ? PASSWORD_ARGON2ID : PASSWORD_BCRYPT);
+    }
+
+    /** Legt einen Benutzer an oder setzt sein Passwort neu (meldet alle Geräte ab). Neue Benutzer bekommen 2FA. */
+    public static function saveUser(string $name, string $password): ?string
+    {
+        $name = mb_strtolower(trim($name));
+        if (!preg_match('/^[a-z0-9._-]{3,60}$/', $name)) {
+            throw new \InvalidArgumentException('Benutzername: 3–60 Zeichen, nur a–z, 0–9, Punkt, Bindestrich, Unterstrich.');
+        }
+        if (mb_strlen($password) < 12) {
+            throw new \InvalidArgumentException('Passwort: mindestens 12 Zeichen.');
+        }
+        $hash = self::hashPassword($password);
+        $existing = Db::one('SELECT id, totp_enc FROM atelier_benutzer WHERE benutzer = ?', [$name]);
+        if ($existing) {
+            Db::run('UPDATE atelier_benutzer SET passwort_hash = ?, aktiv = 1 WHERE id = ?', [$hash, $existing['id']]);
+            Db::run('DELETE FROM atelier_sessions WHERE benutzer_id = ?', [$existing['id']]);
+            return $existing['totp_enc'] === null ? self::reset2fa($name) : null;
+        }
+        Db::run('INSERT INTO atelier_benutzer (benutzer, passwort_hash) VALUES (?, ?)', [$name, $hash]);
+        return self::reset2fa($name);
+    }
+
+    /** Neues TOTP-Geheimnis (z. B. bei neuem Handy). Meldet alle Geräte des Benutzers ab. */
+    public static function reset2fa(string $name): string
+    {
+        $u = Db::one('SELECT id FROM atelier_benutzer WHERE benutzer = ?', [mb_strtolower(trim($name))]);
+        if (!$u) {
+            throw new \InvalidArgumentException("Benutzer $name gibt es nicht.");
+        }
+        $secret = Totp::newSecret();
+        Db::run('UPDATE atelier_benutzer SET totp_enc = ?, totp_letzter_schritt = NULL WHERE id = ?', [Crypto::encrypt(['secret' => $secret], 'atelier_benutzer/totp/' . $u['id']), $u['id']]);
+        Db::run('DELETE FROM atelier_sessions WHERE benutzer_id = ?', [$u['id']]);
+        return $secret;
+    }
+
+    public static function setActive(string $name, bool $active): bool
+    {
+        $n = Db::run('UPDATE atelier_benutzer SET aktiv = ? WHERE benutzer = ?', [$active ? 1 : 0, mb_strtolower(trim($name))]);
+        if (!$active) {
+            Db::run('DELETE s FROM atelier_sessions s JOIN atelier_benutzer b ON b.id = s.benutzer_id WHERE b.benutzer = ?', [mb_strtolower(trim($name))]);
+        }
+        return $n === 1;
     }
 }

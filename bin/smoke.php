@@ -30,7 +30,7 @@ $check('SITE_URL mit https', str_starts_with($cfg['siteUrl'], 'https://'), 'SITE
 try {
     $v = Db::one('SELECT VERSION() AS v')['v'];
     $check("Datenbank erreichbar ($v)", true);
-    $missing = array_diff(['werke', 'werk_bilder', 'bestellungen', 'webhook_events', 'widerrufe', 'anfragen', 'rate_limits', 'atelier_sessions', 'merker'], array_column(Db::all('SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE()'), 't'));
+    $missing = array_diff(['werke', 'werk_bilder', 'bestellungen', 'webhook_events', 'widerrufe', 'anfragen', 'rate_limits', 'atelier_sessions', 'atelier_benutzer', 'merker'], array_column(Db::all('SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE()'), 't'));
     $check('Schema vollständig', !$missing, 'php bin/migrate.php (fehlt: ' . implode(', ', $missing) . ')');
     $n = (int) Db::one('SELECT COUNT(*) AS n FROM werke WHERE aktiv = 1')['n'];
     $check("Werke vorhanden ($n)", $n > 0, 'php bin/import-catalog.php');
@@ -45,7 +45,11 @@ if (Crypto::ready()) {
     $ok = Crypto::decrypt(Crypto::encrypt(['t' => 'ä'], 'smoke'), 'smoke') === ['t' => 'ä'];
     $check('Verschlüsselung funktioniert', $ok);
 }
-$check('ATELIER_PASSWORD_HASH gesetzt', $cfg['atelierPasswordHash'] !== '' && password_get_info($cfg['atelierPasswordHash'])['algo'] !== null, 'php bin/atelier-password.php --generate');
+try {
+    $check('Atelier-Benutzer mit 2FA vorhanden', \App\AtelierAuth::configured(), 'php bin/atelier-user.php anlegen <name>');
+} catch (\Throwable $e) {
+    $check('Atelier-Benutzer mit 2FA vorhanden', false, 'php bin/migrate.php');
+}
 $check('Upload-Ordner beschreibbar', is_dir($cfg['uploadDir']) && is_writable($cfg['uploadDir']), $cfg['uploadDir']);
 $check('Schutz im Upload-Ordner (.htaccess)', is_file($cfg['uploadDir'] . '/.htaccess'));
 $check('STRIPE_SECRET_KEY gesetzt', $cfg['stripeSecretKey'] !== '', 'ohne Schlüssel ist Kaufen gesperrt');

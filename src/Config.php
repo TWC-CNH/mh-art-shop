@@ -97,8 +97,6 @@ final class Config
                 'from' => $e('SMTP_FROM') ?: ($e('SMTP_USER') ?: $e('CONTACT_EMAIL', 'anfragen@matthiashuebner.art')),
             ],
 
-            // Atelier: nur der Hash des Passworts (bin/atelier-password.php erzeugt ihn)
-            'atelierPasswordHash' => $e('ATELIER_PASSWORD_HASH'),
 
             // Personenbezogene Daten (Widerrufe, Anfragen): 32 Byte, Base64 oder Hex
             'dataKey' => $e('DATA_ENCRYPTION_KEY'),

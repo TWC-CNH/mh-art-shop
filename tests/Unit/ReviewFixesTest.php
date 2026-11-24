@@ -67,18 +67,16 @@ final class ReviewFixesTest extends TestCase
 
     public function testNeuesPasswortMeldetAlleGeraeteAb(): void
     {
-        putenv('ATELIER_PASSWORD_HASH=' . password_hash('altes-passwort-1234', PASSWORD_BCRYPT, ['cost' => 4]));
-        Config::reset();
+        [$name] = Stack::createUser();
+        $u = Db::one('SELECT id, passwort_hash FROM atelier_benutzer WHERE benutzer = ?', [$name]);
         $token = bin2hex(random_bytes(32));
-        $hash = (new \ReflectionMethod(AtelierAuth::class, 'tokenHash'))->invoke(null, $token);
-        Db::run('INSERT INTO atelier_sessions (token_hash, laeuft_ab) VALUES (?, ?)', [$hash, Db::now(3600)]);
-        $_COOKIE[AtelierAuth::COOKIE] = $token;
+        $hash = (new \ReflectionMethod(AtelierAuth::class, 'tokenHash'))->invoke(null, $token, $u['passwort_hash']);
+        Db::run('INSERT INTO atelier_sessions (token_hash, benutzer_id, laeuft_ab) VALUES (?, ?, ?)', [$hash, $u['id'], Db::now(3600)]);
+        $_COOKIE[AtelierAuth::COOKIE] = $u['id'] . '.' . $token;
         $this->assertTrue(AtelierAuth::isLoggedIn());
 
-        putenv('ATELIER_PASSWORD_HASH=' . password_hash('neues-passwort-5678', PASSWORD_BCRYPT, ['cost' => 4]));
-        Config::reset();
+        AtelierAuth::saveUser($name, 'ein-ganz-neues-passwort');
         $this->assertFalse(AtelierAuth::isLoggedIn());
         unset($_COOKIE[AtelierAuth::COOKIE]);
-        Stack::applyToProcess();
     }
 }

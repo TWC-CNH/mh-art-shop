@@ -35,7 +35,7 @@ auf der passwortgeschützten Seite `/atelier` (Fotos, Preise, Texte, Verkauft/Au
 - **Personenbezogene Daten** (Widerrufe, Anfragen) liegen nur verschlüsselt in der Datenbank: libsodium XChaCha20-Poly1305, Schlüssel `DATA_ENCRYPTION_KEY`, Kontext je Eintrag gebunden (Manipulation wird erkannt). Ohne Schlüssel wird nichts gespeichert, schon gar nicht im Klartext. Schlüsselwechsel über `DATA_ENCRYPTION_KEY_OLD`.
 - **Käuferdaten** (Name, Adresse, Telefon) bleiben bei Stripe. In der Datenbank steht nur die Bestellnummer.
 - **Löschfristen** (Cron): Anfragen nach 12 Monaten, Widerrufe nach 3 Jahren (`RETENTION_*`).
-- **Atelier:** Passwort nur als Argon2id-Hash in der `.env`, Sitzungen serverseitig (Abmelden macht sie ungültig), CSRF-Token in allen Formularen, Sperre nach 10 Fehlversuchen je IP.
+- **Atelier:** Anmeldung mit Benutzername, Passwort (Argon2id-Hash) und Code aus einer Authenticator-App (TOTP, jeder Code nur einmal gültig; Geheimnis verschlüsselt). Sitzungen serverseitig (Abmelden, neues Passwort oder Sperren machen sie ungültig), CSRF-Token in allen Formularen, Sperre nach 10 Fehlversuchen je IP bzw. 20 je Benutzer.
 - **Missbrauchsschutz:** je IP begrenzt sind Bezahlvorgänge (Reservierungen), Widerrufe und Anfragen; Bestätigungsmails je Empfänger. Gespeichert werden nur geheime Hashes (HMAC), nie IP oder E-Mail im Klartext.
 - **Stripe-Webhook** prüft die Signatur, jedes Ereignis wird nur einmal verarbeitet.
 - **Uploads:** nur JPG, mit GD neu gespeichert (entfernt Metadaten wie GPS), im Ordner `public/bilder/` laufen keine Skripte.
@@ -43,7 +43,9 @@ auf der passwortgeschützten Seite `/atelier` (Fotos, Preise, Texte, Verkauft/Au
 
 ## Für Matthias: Werke pflegen im Atelier
 
-Alles unter **`https://matthiashuebner.art/atelier`**, am Rechner oder am Handy. Die Anmeldung hält 30 Tage.
+Alles unter **`https://matthiashuebner.art/atelier`**, am Rechner oder am Handy. Anmelden mit Benutzername, Passwort und dem 6-stelligen Code aus der Authenticator-App; die Anmeldung hält 30 Tage.
+
+**Zugänge verwalten** (per SSH): `php bin/atelier-user.php anlegen <name>` (neuer Zugang mit Authenticator-Einrichtung), `passwort <name>`, `2fa <name>` (neues Handy), `sperren <name>`, `liste`.
 
 - **Neues Werk:** „+ Neues Werk“ → Fotos hinzufügen → Titel, Technik, Maße, Beschreibung, Preis → „Werk anlegen“
 - **Fotos:** bis zu 8 je Werk. Das erste ist das Hauptfoto. Bei jedem weiteren auswählen, was es zeigt: *Schwarzlicht*, *Detail*, *Im Raum* oder *Ansicht*. Mit ↑ ↓ sortieren. Große Handyfotos werden beim Hochladen automatisch verkleinert. Heißt die Datei z. B. `nacht-uv.jpg`, wird sie als Schwarzlicht-Foto erkannt.
@@ -66,8 +68,8 @@ Voraussetzungen: PHP 8.3+ mit `pdo_mysql`, `sodium`, `gd`, `mbstring`, `curl`; C
 composer install
 cp .env.example .env            # DB-Zugang eintragen, APP_ENV=local, SITE_URL=http://localhost:8888
 php bin/generate-key.php        # → DATA_ENCRYPTION_KEY in die .env
-php bin/atelier-password.php    # → ATELIER_PASSWORD_HASH in die .env
 php bin/migrate.php
+php bin/atelier-user.php anlegen matthias   # Passwort + Authenticator-App einrichten
 php bin/import-catalog.php      # 33 Werke aus data/catalog.json
 composer serve                  # http://localhost:8888
 composer test                   # PHPUnit: Unit- und Ende-zu-Ende-Tests
@@ -98,6 +100,7 @@ Dateien per **FTP**, alles Weitere per **SSH**.
    cd ~/public_html/matthiashuebner.art
    /usr/bin/php8.4 bin/migrate.php
    /usr/bin/php8.4 bin/import-catalog.php
+   /usr/bin/php8.4 bin/atelier-user.php anlegen matthias   # Passwort + Authenticator-App
    /usr/bin/php8.4 bin/smoke.php
    ```
 9. **Dokumentenwurzel prüfen – nur mit Markierungsdatei**, nie durch Abrufe von `/.env`, `/vendor/…` o. Ä. (Hetzner sperrt sonst die anfragende IP):
@@ -129,7 +132,7 @@ src/Controller/           Shop, Checkout/Webhook, Widerruf, Anfrage, Atelier
 src/View/                 HTML der Seiten, Rechtstexte, Künstlerdaten
 src/                      Konfiguration, Datenbank, Werkkatalog, Verschlüsselung, Begrenzung, Mail, CSP
 migrations/               Datenbankschema
-bin/                      migrate, import-catalog, cron, smoke, atelier-password, generate-key
+bin/                      migrate, import-catalog, cron, smoke, atelier-user, generate-key, build-release
 data/catalog.json         Startbestand der Werke
 tests/                    PHPUnit (Unit, Ende-zu-Ende mit Stripe-Ersatz)
 ```
@@ -143,6 +146,6 @@ Laufende Kosten: das Hetzner-Paket; Stripe nur Transaktionsgebühren (ca. 1,5 % 
 - [ ] Preise der Werke ohne Preis im Atelier ergänzen, wenn sie direkt kaufbar sein sollen
 - [ ] Testkauf und Testabbruch im Stripe-Testmodus
 - [ ] SMTP eingetragen und Test-Widerruf abgeschickt (Bestätigung kommt beim Käufer und bei Matthias an)
-- [ ] Atelier-Passwort gesetzt, Atelier einmal mit Matthias durchgegangen
+- [ ] Atelier-Zugang für Matthias angelegt (`bin/atelier-user.php`), Authenticator-App eingerichtet, Atelier einmal mit ihm durchgegangen
 - [ ] `DATA_ENCRYPTION_KEY` im Passwortmanager gesichert
 - [ ] Cron läuft, Datenbanksicherung aktiv
