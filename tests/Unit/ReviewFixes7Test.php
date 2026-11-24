@@ -48,7 +48,8 @@ final class ReviewFixes7Test extends TestCase
 
         Db::run("DELETE FROM schema_migrations WHERE version = '002_atelier_benutzer'");
         $out = Stack::php('bin/migrate.php');
-        $this->assertStringContainsString('übersprungen (schon vorhanden)', $out, 'ALTER TABLE ADD COLUMN zum zweiten Mal');
+        $this->assertStringContainsString('übersprungen (schon vorhanden): Spalte atelier_sessions.benutzer_id', $out);
+        $this->assertStringContainsString('übersprungen (schon vorhanden): Schlüssel fk_sessions_benutzer', $out);
         $this->assertStringContainsString('ausgeführt: 002_atelier_benutzer', $out);
     }
 }

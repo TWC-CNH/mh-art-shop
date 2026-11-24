@@ -687,6 +687,72 @@ final class ShopTest extends TestCase
         }
     }
 
+    /** Neuntes Review von PR #1 */
+    public function testNeuntesReview(): void
+    {
+        $free = fn (int $n) => array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id DESC LIMIT $n"), 'slug');
+        $stripeCfg = fn (array $c) => file_get_contents('http://127.0.0.1:' . Stack::STRIPE_PORT . '/__test/config', false, stream_context_create(['http' => ['method' => 'POST', 'header' => 'Content-Type: application/json', 'content' => json_encode($c)]]));
+        [$a, $b, $d] = $free(3);
+
+        // Preis ändert sich, während die Stripe-Sitzung entsteht: Sitzung wird geschlossen, „vergeben“
+        $wa = self::werk($a);
+        $stripeCfg(['delay_create' => 1.5]);
+        try {
+            $mh = curl_multi_init();
+            $ch = curl_init(Stack::base() . '/api/checkout');
+            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode(['slug' => $a]), CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json', 'Origin: ' . Stack::base(), 'X-Forwarded-For: 198.51.100.220']]);
+            curl_multi_add_handle($mh, $ch);
+            $until = microtime(true) + 0.6;
+            do {
+                curl_multi_exec($mh, $running);
+                curl_multi_select($mh, 0.05);
+            } while (microtime(true) < $until);
+            Db::run('UPDATE werke SET preis_cent = preis_cent + 50000 WHERE id = ?', [$wa['id']]);
+            do {
+                curl_multi_exec($mh, $running);
+                curl_multi_select($mh, 0.1);
+            } while ($running);
+            $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            curl_multi_close($mh);
+        } finally {
+            $stripeCfg(['delay_create' => 0]);
+        }
+        $this->assertSame(409, $status);
+        $sessions = Stack::stripeSessions();
+        $this->assertSame('expired', end($sessions)['status']);
+
+        // Atelier speichert neuen Preis bei einer noch entstehenden Sitzung: Reservierung wird aufgehoben
+        [$c, $csrf] = self::login('192.0.2.130');
+        $wb = self::werk($b);
+        Db::run("UPDATE werke SET reserviert_session = 'pending_test', reserviert_bis = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() + 600), $wb['id']]);
+        $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $wb['id'], 'titel' => $wb['titel'], 'masse' => $wb['masse'], 'preis' => (string) ($wb['preis_cent'] / 100 + 10), 'status' => 'available', 'status_geladen' => 'reserved', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertNull(self::werk($b)['reserviert_session']);
+
+        // Cookie des Bezahlvorgangs hält so lange wie die Reservierung
+        $r = self::buy($d);
+        $this->assertMatchesRegularExpression('/mh_co=cs_[^;]+;.*Max-Age=2700/i', implode("\n", $r->headers['set-cookie'] ?? []));
+
+        // import --update ändert den Preis eines gerade reservierten Werks nicht
+        Db::run('UPDATE werke SET preis_cent = 777700 WHERE slug = ?', [$d]);
+        $out = Stack::php('bin/import-catalog.php', ['--update']);
+        $this->assertStringContainsString("$d ist gerade reserviert", $out);
+        $this->assertSame(777700, (int) self::werk($d)['preis_cent']);
+
+        // Erfolgreiche Anmeldung hebt die Bremse je Benutzer und IP auf
+        $user = Stack::createUser();
+        for ($i = 0; $i < 6; $i++) {
+            (new Client('198.51.100.' . (230 + $i)))->post('/atelier/login', ['benutzer' => $user[0], 'passwort' => 'falsch', 'code' => '000000']);
+        }
+        $me = new Client('198.51.100.240');
+        $bad = ['benutzer' => $user[0], 'passwort' => 'falsch', 'code' => '000000'];
+        $me->post('/atelier/login', $bad);
+        $me->post('/atelier/login', $bad);
+        $this->assertSame(303, $me->post('/atelier/login', Stack::credentials($user))->status);
+        for ($i = 0; $i < 3; $i++) {
+            $this->assertSame(401, $me->post('/atelier/login', $bad)->status, 'nach Erfolg wieder 3 Versuche');
+        }
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

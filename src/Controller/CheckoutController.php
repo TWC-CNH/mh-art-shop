@@ -40,7 +40,8 @@ final class CheckoutController
     {
         if ($sessionId !== '') {
             // Merkt sich die eigene Sitzung, damit man nach "Zurück" im Browser weiterbezahlen kann.
-            Http::setCookie(self::SESSION_COOKIE, $sessionId, 3600, '/', 'Lax');
+            // So lange gültig wie der Bezahlvorgang (Reservierungsdauer plus Puffer)
+            Http::setCookie(self::SESSION_COOKIE, $sessionId, Config::get()['reserveMinutes'] * 60 + 900, '/', 'Lax');
         }
         if (Http::wantsJson()) {
             Http::jsonOut($error !== '' ? ['error' => $error] : ['url' => $url], $error !== '' ? ($status === 303 ? 400 : $status) : 200);
@@ -110,7 +111,7 @@ final class CheckoutController
         try {
             $session = $s->checkout->sessions->create(self::sessionParams($work, $cfg, time() + $seconds));
             Db::run('INSERT INTO bestellungen (stripe_session_id, werk_id, betrag_cent) VALUES (?, ?, ?)', [$session->id, $work['id'], $work['priceCents']]);
-            if (!Catalog::attachSession($work['id'], $token, $session->id, (int) $session->expires_at)) {
+            if (!Catalog::attachSession($work['id'], $token, $session->id, (int) $session->expires_at, (int) $work['priceCents'])) {
                 // Während die Sitzung entstand, wurde das Werk entfernt oder verkauft: Sitzung sofort schließen
                 try {
                     $s->checkout->sessions->expire($session->id);
@@ -260,7 +261,8 @@ final class CheckoutController
             http_response_code(400);
             exit('Ungültige Signatur');
         }
-        if (Db::one('SELECT 1 FROM webhook_events WHERE event_id = ?', [$event->id])) {
+        // Zuerst eintragen: Kommen zwei Zustellungen gleichzeitig, verarbeitet nur die erste
+        if (Db::run('INSERT IGNORE INTO webhook_events (event_id, typ) VALUES (?, ?)', [$event->id, $event->type]) === 0) {
             Http::jsonOut(['received' => true, 'duplicate' => true]);
         }
 
@@ -315,9 +317,12 @@ final class CheckoutController
                     // charge.refunded u. a.: Werk bleibt bewusst verkauft, bis Matthias es im Atelier wieder freigibt.
                     break;
             }
-            Db::run('INSERT IGNORE INTO webhook_events (event_id, typ) VALUES (?, ?)', [$event->id, $event->type]);
         } catch (\Throwable $e) {
             Log::error("Fehler bei {$event->type}: " . $e->getMessage());
+            try {
+                Db::run('DELETE FROM webhook_events WHERE event_id = ?', [$event->id]); // Stripe soll es erneut zustellen
+            } catch (\Throwable) {
+            }
             http_response_code(500); // Stripe versucht es dann erneut
             exit('Fehler');
         }

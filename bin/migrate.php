@@ -23,6 +23,17 @@ foreach ($files as $f) {
     // Hinweis für neue Migrationen: kein „;“ innerhalb von Texten verwenden (es wird an „;“ getrennt).
     $already = [1050, 1060, 1061, 1068, 1091, 1826]; // Tabelle/Spalte/Index/Primärschlüssel/Fremdschlüssel schon vorhanden bzw. schon entfernt
     foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmt) {
+        // Unabhängig vom Fehlercode der Datenbank: schon vorhandene Spalten und Fremdschlüssel überspringen
+        if (preg_match('/^ALTER\s+TABLE\s+`?(\w+)`?\s+ADD\s+COLUMN\s+`?(\w+)`?/i', $stmt, $m)
+            && Db::one('SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?', [$m[1], $m[2]])) {
+            echo "  übersprungen (schon vorhanden): Spalte {$m[1]}.{$m[2]}\n";
+            continue;
+        }
+        if (preg_match('/^ALTER\s+TABLE\s+`?(\w+)`?\s+ADD\s+CONSTRAINT\s+`?(\w+)`?/i', $stmt, $m)
+            && Db::one('SELECT 1 FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?', [$m[1], $m[2]])) {
+            echo "  übersprungen (schon vorhanden): Schlüssel {$m[2]}\n";
+            continue;
+        }
         try {
             $pdo->exec($stmt);
         } catch (PDOException $e) {

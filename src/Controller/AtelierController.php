@@ -400,13 +400,15 @@ final class AtelierController
                 // Läuft gerade ein Bezahlvorgang und wird das Werk ausgeblendet oder ändern sich Preis/Versand,
                 // diesen Bezahlvorgang beenden: sonst würde ein ausgeblendetes Werk oder zum alten Preis verkauft.
                 $int = fn ($v) => $v === null ? null : (int) $v;
-                $runningSession = (int) $prev['reserviert'] && str_starts_with((string) $prev['reserviert_session'], 'cs_') ? $prev['reserviert_session'] : null;
+                // Auch eine gerade entstehende Sitzung (pending_…) zählt: ihre Reservierung wird aufgehoben,
+                // dann merkt der Checkout das und schließt die neue Stripe-Sitzung selbst.
+                $runningSession = (int) $prev['reserviert'] && preg_match('/^(cs_|pending_)/', (string) $prev['reserviert_session']) ? $prev['reserviert_session'] : null;
                 $changedTerms = ((int) $prev['sichtbar'] === 1 && $data['sichtbar'] === 0)
                     || $int($prev['preis_cent']) !== $int($data['preis_cent'])
                     || $int($prev['versand_cent']) !== $int($data['versand_cent']);
                 if ($expire === null && $runningSession !== null && $changedTerms) {
                     Db::run('UPDATE werke SET reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND reserviert_session = ?', [$id, $runningSession]);
-                    $expire = $runningSession;
+                    $expire = str_starts_with($runningSession, 'cs_') ? $runningSession : null;
                     $msg = 'bezahlvorgang-beendet';
                 }
             }
@@ -614,6 +616,7 @@ final class AtelierController
             if ($user) {
                 RateLimit::reset('login', $ip);
                 RateLimit::reset('login-user', $name);
+                RateLimit::reset('login-user-ip', $name . '|' . $ip);
                 AtelierAuth::login($user);
                 if (isset($user['_notfall_rest'])) {
                     $rest = $user['_notfall_rest'];

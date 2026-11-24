@@ -33,7 +33,7 @@ foreach ($data as $d) {
         'ausstellungen' => json_encode($w['exhibitions'], JSON_UNESCAPED_UNICODE),
     ];
     Db::transaction(function () use ($w, $row, $update, &$new, &$upd, &$skip) {
-        $prev = Db::one('SELECT id FROM werke WHERE slug = ?', [$w['slug']]);
+        $prev = Db::one('SELECT id, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE slug = ?', [$w['slug']]);
         if ($prev && !$update) {
             $skip++;
             return;
@@ -43,6 +43,11 @@ foreach ($data as $d) {
             // Verkaufsstatus gehört dem Shop (Webhook, Atelier), nicht der Katalogdatei: nie überschreiben
             $fields = $row;
             unset($fields['status']);
+            if ((int) $prev['reserviert']) {
+                // Läuft gerade ein Bezahlvorgang, Preis und Versand nicht ändern (er liefe sonst zum alten Preis weiter)
+                unset($fields['preis_cent'], $fields['versand_cent']);
+                echo "  Hinweis: {$w['slug']} ist gerade reserviert – Preis/Versand nicht geändert, später erneut ausführen.\n";
+            }
             Db::run('UPDATE werke SET ' . implode(', ', array_map(fn ($c) => "$c = ?", array_keys($fields))) . ' WHERE id = ?', [...array_values($fields), $id]);
             Db::run('DELETE FROM werk_bilder WHERE werk_id = ?', [$id]);
             $upd++;
