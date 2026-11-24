@@ -1,0 +1,8 @@
+.atelier-uploads/
+.env
+.netlify/
+.test-uploads/
+node_modules/
+.test-records/
+.records/
+.idea/

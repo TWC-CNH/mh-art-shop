@@ -1,0 +1,973 @@
+[
+ {
+  "slug": "cool",
+  "title": "COOL",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "100 x 70 x 2 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Zwei Figuren, eine ausdrucksstarke Komposition und eine außergewöhnliche Farbgestaltung prägen dieses Werk. Das Zusammenspiel aus kontrastreicher Schwarz-Weiß-Malerei und leuchtenden Neonfarben erzeugt eine unverwechselbare visuelle Präsenz. Unter UV-Licht verändert sich die Farbwirkung und eröffnet eine zusätzliche Dimension des Bildes.",
+  "price_eur": 3400,
+  "status": "available",
+  "image": "/img/works/cool.jpg",
+  "sort": 1,
+  "w": 1129,
+  "h": 1600,
+  "thumb": "/img/works/cool-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/cool-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   },
+   {
+    "src": "/img/works/cool-detail1.jpg",
+    "kind": "detail",
+    "w": 1200,
+    "h": 1600
+   },
+   {
+    "src": "/img/works/cool-detail2.jpg",
+    "kind": "detail",
+    "w": 1200,
+    "h": 1600
+   },
+   {
+    "src": "/img/works/cool-detail3.jpg",
+    "kind": "detail",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "unsere-zeit",
+  "title": "UNSERE ZEIT",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "60 x 40 x 2 cm",
+  "format": "mittel",
+  "series": null,
+  "description": "Zwei Figuren, eine ausdrucksstarke Komposition und eine außergewöhnliche Farbgestaltung prägen dieses Werk. Das Zusammenspiel aus kontrastreicher Schwarz-Weiß-Malerei und leuchtenden Neonfarben erzeugt eine unverwechselbare visuelle Präsenz. Unter UV-Licht verändert sich die Farbwirkung und eröffnet eine zusätzliche Dimension des Bildes.",
+  "price_eur": 1490,
+  "status": "available",
+  "image": "/img/works/unsere-zeit.jpg",
+  "sort": 2,
+  "w": 1066,
+  "h": 1600,
+  "thumb": "/img/works/unsere-zeit-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/unsere-zeit-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/unsere-zeit-uv.jpg",
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "blick",
+  "title": "BLICK",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "30 x 24 x 2 cm",
+  "format": "klein",
+  "series": null,
+  "description": "Monochromes Portrait einer Frau mit verlaufender schwarzer Farbe. Im Tageslicht verlaufende Neonfarben in Orange, Grün und Gelb, die unter UV-Licht hervortreten.",
+  "price_eur": 390,
+  "status": "available",
+  "image": "/img/works/blick.jpg",
+  "sort": 3,
+  "w": 1279,
+  "h": 1600,
+  "thumb": "/img/works/blick-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/blick-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/blick-uv.jpg",
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "frei",
+  "title": "FREI",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "70 x 50 x 2 cm",
+  "format": "mittel",
+  "series": null,
+  "description": "Dieses Werk taucht in eine Welt des intensiven Kontrasts und der expressionistischen Energie ein. Im Zentrum steht die Gestalt einer Rose, deren Blütenkopf und Blätter ausschließlich in tiefem Schwarz und verschiedenen Grauschattierungen gehalten sind. Die monochromen Formen heben sich scharf von einem explosiven, leuchtend orangen Hintergrund ab, der von dynamischen, vertikalen Pinselstrichen in Neongrün und Neongelb durchzogen ist.",
+  "price_eur": null,
+  "status": "sold",
+  "image": "/img/works/frei.jpg",
+  "sort": 4,
+  "w": 1281,
+  "h": 1600,
+  "thumb": "/img/works/frei-sm.jpg",
+  "gallery": [],
+  "uv_image": "/img/works/frei-uv.jpg",
+  "awards": [
+   "Honorable Mention, „Symphony of Colors“ 2026 (Fame Frame Gallery)"
+  ],
+  "exhibitions": [
+   "Barockschloss Gleina, Mai 2026"
+  ]
+ },
+ {
+  "slug": "nacht",
+  "title": "NACHT",
+  "year": 2026,
+  "technique": "Acryl und Blattgold auf Leinwand, UV reaktiv",
+  "size": "100 x 50 x 3,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Eine Frau steht vor einem schwarzen Hintergrund. Im oberen Teil wird er durch ein rundes strukturiertes Objekt aus Blattgold bestimmt. Unter UV-Licht wird die ruhige Szene durch blitzartige Drips in Neon-Blau unterbrochen.",
+  "price_eur": 3000,
+  "status": "available",
+  "image": "/img/works/nacht.jpg",
+  "sort": 5,
+  "w": 766,
+  "h": 1600,
+  "thumb": "/img/works/nacht-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/nacht-raum1.jpg",
+    "kind": "raum",
+    "w": 1600,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/nacht-uv.jpg",
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "krieg",
+  "title": "KRIEG",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "70 x 50 x 2 cm",
+  "format": "mittel",
+  "series": null,
+  "description": "Eine Person stützt ihren Kopf auf ihre rechte Hand. Sie ist monochrom dargestellt, während der Hintergrund Neon-blau und Neon-Gelb pulsiert Im rechten Teil des Bildes ist die Person durch aufplatzende weiße Farbe abgedeckt, über die wiederum ein Farbverwischung in Neon-Pink aufgetragen ist. Sie verbindet das komplett Werk.",
+  "price_eur": 1600,
+  "status": "available",
+  "image": "/img/works/krieg.jpg",
+  "sort": 6,
+  "w": 1151,
+  "h": 1600,
+  "thumb": "/img/works/krieg-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/krieg-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "oberflaeche",
+  "title": "OBERFLÄCHE",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv, weiß gerahmt",
+  "size": "66 x 46 cm",
+  "format": "mittel",
+  "series": null,
+  "description": "„Oberfläche“ ist eine monochrome Arbeit in Weiß auf Weiß. Die strukturierte Oberfläche der Leinwand wird durch unterschiedlich aufgetragene Farbschichten und plastische Elemente geprägt. Unter normalem Licht bleibt das Werk nahezu vollständig weiß. Erst durch UV-Licht wird das darunterliegende, realistisch ausgearbeitete Porträt sichtbar. Die Arbeit wird in einem weißen Schattenfugenrahmen präsentiert. Ausgezeichnet im Rahmen des Wettbewerbes \"The White\" der ÁCCENT GALLERY.",
+  "price_eur": 1800,
+  "status": "available",
+  "image": "/img/works/oberflaeche.jpg",
+  "sort": 7,
+  "w": 591,
+  "h": 827,
+  "thumb": "/img/works/oberflaeche-sm.jpg",
+  "gallery": [],
+  "uv_image": "/img/works/oberflaeche-uv.jpg",
+  "awards": [
+   "Curators Choice Award, „The White Exhibition“ 2026 (Accent Gallery)"
+  ],
+  "exhibitions": []
+ },
+ {
+  "slug": "wanderung",
+  "title": "WANDERUNG",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "52 x 44 x 2 cm",
+  "format": "klein",
+  "series": "Schirm",
+  "description": "Mit der Serie SCHIRM entwickelt Matthias Hübner eine Reihe ikonischer Werke, die einzeln, aber auch zusammen eine beeindruckende Wirkung entfalten. Dabei verzichtet er nicht auf die für ihn typische UV-Farbe. Weitere Bilder der Serie:",
+  "price_eur": 950,
+  "status": "available",
+  "image": "/img/works/wanderung.jpg",
+  "sort": 8,
+  "w": 1280,
+  "h": 1600,
+  "thumb": "/img/works/wanderung-sm.jpg",
+  "gallery": [],
+  "uv_image": "/img/works/wanderung-uv.jpg",
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "sommerregen",
+  "title": "SOMMERREGEN",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "52 x 42 x 2 cm",
+  "format": "klein",
+  "series": "Schirm",
+  "description": "Es regnet... Na und?! Es ist SOMMER!",
+  "price_eur": 950,
+  "status": "available",
+  "image": "/img/works/sommerregen.jpg",
+  "sort": 9,
+  "w": 1280,
+  "h": 1600,
+  "thumb": "/img/works/sommerregen-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/sommerregen-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/sommerregen-uv.jpg",
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "schock",
+  "title": "SCHOCK",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, UV-sensibel",
+  "size": "100 x 70 x 1,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Das Werk zeigt ein frontal dargestelltes Gesicht in Schwarz-Weiß, dessen Augen mit einem breiten Verband verdeckt sind. Über die Figur ziehen sich floureszierende Farbakzente in Gelb, Rot und Grün, teils als Linien, Flächen und tropfende Spuren. Der Hintergrund wechselt zwischen dunklen, verwischten Partien und leuchtenden Neonbereichen. Die Komposition kombiniert präzise figurative Elemente mit dynamischen, farbintensiven Bereichen. Dieses Bild war Bestandteil der ausgezeichneten Teilnahmen am Luxembourg Art Prize 2025 & ARTAVITA \"Artist of the year 2025\".",
+  "price_eur": 3400,
+  "status": "available",
+  "image": "/img/works/schock.jpg",
+  "sort": 10,
+  "w": 1111,
+  "h": 1600,
+  "thumb": "/img/works/schock-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/schock-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "awards": [
+   "Honorable Mention, 10th FIGURATIVE International Juried Art Competition 2025 (Teravarna Art Gallery, New York)",
+   "Finalist, Artist of the Year 2025 (ARTAVITA)",
+   "Verdiensturkunde, Luxembourg Art Prize 2025"
+  ],
+  "exhibitions": [
+   "Modrý Brouk, Slovanský dům, Prag, ab 2027",
+   "Neonbazaar Art Gallery, Stuttgart, 2026",
+   "Barockschloss Gleina, 2026",
+   "TV Club Leipzig, 2026"
+  ]
+ },
+ {
+  "slug": "nie-weg",
+  "title": "NIE WEG",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "70 x 50 cm",
+  "format": "mittel",
+  "series": null,
+  "description": "Eine monochrome Figur eines älteren, sitzenden Mannes mit Schiebermütze und Gehstock dominiert die rechte Hälfte dieser hochformatigen Komposition, wobei sich die Gestalt nach rechts hin im dunklen Grau auflöst. Das plastisch ausgearbeitete Motiv kontrastiert mit einem abstrakten, gespachtelten Hintergrund in UV-reaktiven Gelb-, Orange- und Rosatönen.",
+  "price_eur": 1600,
+  "status": "available",
+  "image": "/img/works/nie-weg.jpg",
+  "sort": 11,
+  "w": 1143,
+  "h": 1600,
+  "thumb": "/img/works/nie-weg-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/nie-weg-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "rost",
+  "title": "ROST",
+  "year": 2026,
+  "technique": "Acryl auf Aluminium, Distanzrahmen, UV reaktiv",
+  "size": "50 x 50 cm",
+  "format": "klein",
+  "series": null,
+  "description": "Ein monochromes, detailreich ausgearbeitetes Porträt eines älteren Mannes mit Bart bildet das Zentrum dieser quadratischen Komposition auf Aluminium. Das plastisch gestaltete Antlitz bettet sich in einen abstrakten, expressiven Hintergrund aus Erdtönen und UV-reaktivem Rot und Gelb, wobei der metallische Malgrund stellenweise silbrig durchschimmert.",
+  "price_eur": 2100,
+  "status": "available",
+  "image": "/img/works/rost.jpg",
+  "sort": 12,
+  "w": 1417,
+  "h": 1417,
+  "thumb": "/img/works/rost-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/rost-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "leben-in-farbe",
+  "title": "LEBEN IN FARBE",
+  "year": 2026,
+  "technique": "Acryl auf Aluminium, Distanzrahmen, UV reaktiv",
+  "size": "50 x 50 cm",
+  "format": "klein",
+  "series": null,
+  "description": "Ein monochromes, im extremen Anschnitt gestaltetes Porträt eines älteren Mannes mit nachdenklicher Handgeste prägt diese quadratische Komposition auf Aluminium. Die detailreich ausgearbeitete Gesichtshälfte kontrastiert mit großflächig freigelassenen Arealen des gebürsteten, silbrig glänzenden Metallgrundes sowie einer dynamischen, reliefartigen Farbschüttung in UV-reaktivem Rot und Blau am linken Bildrand.",
+  "price_eur": 2100,
+  "status": "available",
+  "image": "/img/works/leben-in-farbe.jpg",
+  "sort": 13,
+  "w": 1417,
+  "h": 1417,
+  "thumb": "/img/works/leben-in-farbe-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/leben-in-farbe-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "helden",
+  "title": "HELDEN",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, UV sensibel",
+  "size": "100 x 80 x 1,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Das Werk zeigt ein Mädchen und einen Jungen, die während der Durchquerung des Bildes über eine nicht detonierte Fliegerbombe steigen. Der Junge ist in einem Superheldenabzug kostümiert, während das Mädchen ein modernes Sportkleid trägt. Das Werk ist Schwert-Weiß, der Himmel wird jedoch von Neonpink durchbrochen, was sich wie ein Fremdkörper doch ins Bild passt. Kaufanfrage",
+  "price_eur": 3600,
+  "status": "available",
+  "image": "/img/works/helden.jpg",
+  "sort": 14,
+  "w": 1270,
+  "h": 1600,
+  "thumb": "/img/works/helden-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/helden-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "fruehling",
+  "title": "FRÜHLING",
+  "year": 2026,
+  "technique": "Acryl Leinwand, UV reaktiv",
+  "size": "ca. 160 x 130 x 2 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Das Werk zeigt eine stehende weibliche Figur mit erhobenen Armen. Die Darstellung ist in Schwarz-Weiß gehalten und arbeitet mit differenzierten Hell-Dunkel-Kontrasten. Die Figur trägt eine dunkle Lederjacke über einem hellen Rock. Der Hintergrund besteht aus zwei klar voneinander getrennten Farbflächen in Türkis und Pink. Die pinke Fläche ist UV-reaktiv. Die Figur ist zentral im Bild platziert und hebt sich deutlich vom farbigen Hintergrund ab.",
+  "price_eur": null,
+  "status": "available",
+  "image": "/img/works/fruehling.jpg",
+  "sort": 15,
+  "w": 1300,
+  "h": 1600,
+  "thumb": "/img/works/fruehling-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/fruehling-raum1.jpg",
+    "kind": "raum",
+    "w": 1281,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "resonanz",
+  "title": "RESONANZ",
+  "year": 2026,
+  "technique": "Acryl Leinwand, UV reaktiv",
+  "size": "120 x 100 x 3,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Präzise ausgearbeitetes Portrait trifft auf einen dynamischen, neonakzentuierten Farbraum. Markante Präsenz mit klarer Formensprache und hoher Wandwirkung.",
+  "price_eur": 4400,
+  "status": "available",
+  "image": "/img/works/resonanz.jpg",
+  "sort": 16,
+  "w": 1351,
+  "h": 1600,
+  "thumb": "/img/works/resonanz-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/resonanz-raum1.jpg",
+    "kind": "raum",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/resonanz-uv.jpg",
+  "awards": [],
+  "exhibitions": [
+   "Barockschloss Gleina, Mai 2026",
+   "Cosy Festival, Schloss Dornburg, August 2025"
+  ]
+ },
+ {
+  "slug": "show",
+  "title": "SHOW",
+  "year": 2026,
+  "technique": "Acryl und Fiberglas auf Leinwand, UV reaktiv",
+  "size": "62 x 42 x 2 cm",
+  "format": "mittel",
+  "series": null,
+  "description": "Das Werk kombiniert schwarz-weiße Acrylmalerei auf blauem Grund mit einem plastischen Element. Während links eine Ballerina in dynamischer Pose dargestellt ist, ragt von rechts ein dreidimensionaler, rot gefasster Vorhang aus Fiberglas in die Komposition. Das UV-reaktive Werk wird durch eine schlichte, weiße Rahmung umfasst, die die Objekthaftigkeit unterstreicht.",
+  "price_eur": null,
+  "status": "available",
+  "image": "/img/works/show.jpg",
+  "sort": 17,
+  "w": 1071,
+  "h": 1600,
+  "thumb": "/img/works/show-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/show-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   },
+   {
+    "src": "/img/works/show-detail1.jpg",
+    "kind": "detail",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/show-uv.jpg",
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "tanz",
+  "title": "TANZ",
+  "year": 2026,
+  "technique": "Acryl auf Malkarton, schwarz gerahmt, UV reaktiv",
+  "size": "53,5 x 43,5 x 2 cm",
+  "format": "klein",
+  "series": null,
+  "description": "Der Hintergrund in tiefem Grau hebt die leuchtenden Farben hervor und lässt die Figur förmlich aus der Leinwand herausspringen. Die Art, wie die Farbe aufgetragen ist, vermittelt ein Gefühl von Freiheit und losgelöster Energie. Das Werk ist ein kraftvolles, lebendiges Statement, das dem Betrachter Raum für eigene Interpretationen der dargestellten Bewegung und Stimmung lässt.",
+  "price_eur": 950,
+  "status": "available",
+  "image": "/img/works/tanz.jpg",
+  "sort": 18,
+  "w": 1319,
+  "h": 1600,
+  "thumb": "/img/works/tanz-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/tanz-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/tanz-uv.jpg",
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "beton",
+  "title": "BETON",
+  "year": 2026,
+  "technique": "Acryl auf Malkarton, schwarz gerahmt, UV reaktiv",
+  "size": "53,5 x 43,5 x 2 cm",
+  "format": "klein",
+  "series": null,
+  "description": "Eine Figur vor einer strukturierten, betonartigen Oberfläche. Körper und Raum stehen in direkter Spannung zueinander. Die reduzierte Farbigkeit und die sichtbare Materialität bestimmen den Bildraum. Unter UV-Licht treten zusätzliche Ebenen hervor, ohne den Charakter des Werks zu verändern. KAUFEN",
+  "price_eur": null,
+  "status": "available",
+  "image": "/img/works/beton.jpg",
+  "sort": 19,
+  "w": 1279,
+  "h": 1600,
+  "thumb": "/img/works/beton-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/beton-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "ausbruch",
+  "title": "AUSBRUCH",
+  "year": 2026,
+  "technique": "Acryl Leinwand, UV reaktiv",
+  "size": "105 x 65 x 2 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Eine gebeugte Figur arbeitet mit einem Presslufthammer an einer massiven, schwarzen Fläche. Die Komposition ist horizontal gegliedert: ein kühler blauer Bereich oben, eine geschlossene dunkle Zone in der Mitte und darunter ein aufbrechendes, neonrotes Feld. Die UV-reaktive Farbe setzt einen intensiven Kontrast zur reduzierten Schwarz-Weiß-Malerei und bestimmt die visuelle Spannung des Bildes.",
+  "price_eur": null,
+  "status": "available",
+  "image": "/img/works/ausbruch.jpg",
+  "sort": 20,
+  "w": 991,
+  "h": 1600,
+  "thumb": "/img/works/ausbruch-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/ausbruch-raum1.jpg",
+    "kind": "raum",
+    "w": 1600,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "ton",
+  "title": "TON",
+  "year": 2026,
+  "technique": "Acryl auf Leinwand, UV reaktiv",
+  "size": "100 x 70 x 2 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Das Werk verbindet figürliche Malerei mit einer abstrakten Struktur, die auf einer WAV-Form vor dem Mastering basiert. Unter Normallicht erscheint das Werk reduziert und kontrolliert, unter UV-Licht öffnet sich eine zweite visuelle Ebene, in der Farbe und Struktur deutlich an Intensität gewinnen. Die UV-Reaktivität ist integraler Bestandteil des Werkes und verändert dessen Wahrnehmung je nach Lichtsituation.",
+  "price_eur": 3400,
+  "status": "available",
+  "image": "/img/works/ton.jpg",
+  "sort": 21,
+  "w": 1127,
+  "h": 1600,
+  "thumb": "/img/works/ton-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/ton-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/ton-uv.jpg",
+  "awards": [],
+  "exhibitions": [
+   "Favori Art Genesis N°1, Schloss Gleina, 2026",
+   "Cosy Festival, Schloss Dornburg, 2026",
+   "„Farben des August“, TV Club Leipzig, 2026"
+  ]
+ },
+ {
+  "slug": "funktion",
+  "title": "FUNKTION",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand XL",
+  "size": "120 x 100 x 4 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Ein Selbstbildnis zwischen Auflösung und Kontrolle. Das Gesicht ist geteilt: links fragmentiert, rechts funktional. Militärische Zeichen werden nicht erklärt, sondern stehen als Systemmarker. Die Oberfläche erinnert an Beton – schwer, widerständig, unbeweglich. UV-reaktive Neonfarben brechen die scheinbare Ordnung und legen innere Spannung frei. Das Werk thematisiert den Menschen als Träger einer Rolle – nicht als Individuum.",
+  "price_eur": 4400,
+  "status": "available",
+  "image": "/img/works/funktion.jpg",
+  "sort": 22,
+  "w": 1324,
+  "h": 1600,
+  "thumb": "/img/works/funktion-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/funktion-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "peace",
+  "title": "PEACE",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, UV sensibel",
+  "size": "100 x 50 x 1,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Dieses im Oktober 2025 fertig gestellte Gemälde zeigt ein Mädchen vor einer Mauer, die in irgendeiner Stadt sein könnte. Sie trägt ihr Kuscheltier, welches übrigens das Gleiche ist wie auf dem Bild \"Zeit\" zu sehen ist, und eine Waffe. Sei steht vor einem großen Peace-Zeichen und zielt in die Luft. Die Zeichen im Hintergrund sind zum großen Teil mit UV-sensibler Neonfarbe aufgebracht - auch das Kleid des Mädchens reagiert auf Beleuchtung.",
+  "price_eur": 3100,
+  "status": "available",
+  "image": "/img/works/peace.jpg",
+  "sort": 23,
+  "w": 807,
+  "h": 1600,
+  "thumb": "/img/works/peace-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/peace-raum1.jpg",
+    "kind": "raum",
+    "w": 1368,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": [
+   "Cosy Festival, Schloss Dornburg, August 2025"
+  ]
+ },
+ {
+  "slug": "chaos",
+  "title": "CHAOS",
+  "year": 2025,
+  "technique": "Acryl und Paste auf Leinwand, UV-sensibel",
+  "size": "100 x 70 x 1,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Aus einem expressionistischem Hintergrund scheint ein Mann durch die Leinwand zu brechen, er hält mit beiden Händen seine Wangen, stützt aber nicht sein Gesicht auf. Seine Augen wirken glasig. Der Mann ist Schwarz-Weiß dargestellt, der Hintergrund, Neongelb, Neonpink und Neonorange. Seine dreidimensionale Kapuze wird durch Neonblau akzentuiert. Das Werk war Bestandteil der ausgezeichneten Teilnahme am Luxembourg Art Prize 2025.",
+  "price_eur": 3400,
+  "status": "available",
+  "image": "/img/works/chaos.jpg",
+  "sort": 24,
+  "w": 1125,
+  "h": 1600,
+  "thumb": "/img/works/chaos-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/chaos-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "awards": [
+   "Verdiensturkunde, Luxembourg Art Prize 2025"
+  ],
+  "exhibitions": [
+   "Cosy Festival, Schloss Dornburg, August 2025"
+  ]
+ },
+ {
+  "slug": "adhs",
+  "title": "ADHS",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, UV-sensibler Hintergrund",
+  "size": "100 x 70 x 1,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Eine Frau in gebetsartiger Haltung. Sie schließt ihre Augen und ist Schwarz-Weiß dargestellt. Der expressionistische Hintergrund übernimmt Teile ihrer Darstellung und bettet sie so ins Bild ein. Das Bild wirkt unruhig, bietet aber in Gestalt der Frau, einen Fixpunkt, der es doch ermöglicht, Entspannung zu finden. Dieses Bild war Bestandteil der ausgezeichneten Teilnahme am Luxembourg Art Prize 2025. Kaufanfrage",
+  "price_eur": 3400,
+  "status": "available",
+  "image": "/img/works/adhs.jpg",
+  "sort": 25,
+  "w": 1138,
+  "h": 1600,
+  "thumb": "/img/works/adhs-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/adhs-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/adhs-uv.jpg",
+  "awards": [
+   "Verdiensturkunde, Luxembourg Art Prize 2025"
+  ],
+  "exhibitions": []
+ },
+ {
+  "slug": "generation",
+  "title": "GENERATION",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, UV-sensibel",
+  "size": "120 x 100 x 3,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Das Bild zeigt das Porträt einer jungen Frau, die traditionelle Kopfbedeckung und moderne Kopfhörer trägt, was die Auseinandersetzung mit Identität und der modernen Welt widerspiegelt. Das Werk integriert UV-reaktive Farben. Beim Betrachten mit einer UV-Lampe offenbart sich dem Betrachter eine zweite, verborgene Bildebene, die ihn zum Entdecker macht und das \"Geheimnis\" des Werkes offenbart. Dieses Bild war Bestandteil der ausgezeichneten Teilnahmen am Luxembourg Art Prize 2025 & ARTAVITA \"Artist of the year 2025\"",
+  "price_eur": 4400,
+  "status": "available",
+  "image": "/img/works/generation.jpg",
+  "sort": 26,
+  "w": 1000,
+  "h": 1193,
+  "thumb": "/img/works/generation-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/generation-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "awards": [
+   "Finalist, Artist of the Year 2025 (ARTAVITA)",
+   "Verdiensturkunde, Luxembourg Art Prize 2025"
+  ],
+  "exhibitions": [
+   "Arrival Gallery Madrid Art Show, Galería Nueva, Madrid, April/Mai 2026",
+   "X-MAS Exhibition, The Stage Gallery, Bonn, Dezember 2025"
+  ]
+ },
+ {
+  "slug": "beach",
+  "title": "BEACH",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, UV-sensibel",
+  "size": "140 x 70 x 1,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Eine Frau sitzt am Strand auf einem blauen Strandtuch, welches über dem Untergrund zu schweben scheint. Es verläuft auf dem Bild, so wie auch das transparente Tuch, welches sich quer über das Bild um ihren Körper schlingt. Das Gesicht wird bedeckt von ihrer rechten Hand und einem Hut mit großer Krempe. Hier ist die Figur farbig, der Hintergrund jedoch in Schwarz-Weiß gehalten. Das Tuch ist Neonrot fluoreszierend. Kaufanfrage",
+  "price_eur": null,
+  "status": "available",
+  "image": "/img/works/beach.jpg",
+  "sort": 27,
+  "w": 787,
+  "h": 1600,
+  "thumb": "/img/works/beach-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/beach-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "digital",
+  "title": "DIGITAL",
+  "year": 2025,
+  "technique": "Acryl auf Pappe auf Acryl auf Leinwand, UV-sensibler Hintergrund",
+  "size": "100 x 70 x 1,7 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Das Werk zeigt ein geteiltes Frauenporträt: Die linke Hälfte ist klassisch in Schwarz-Weiß gemalt, während die rechte Hälfte in einem leuchtenden Rot in graue, digitale Fragmente, die wie Pixel wirken, zerfällt. Hübner verbindet Malerei und Digitalität, wodurch das Bild die moderne Wahrnehmung und Identität thematisiert. Es besitzt UV-reaktive Effekte. Dieses Bild war Bestandteil der ausgezeichneten Teilnahme am Luxembourg Art Prize 2025.",
+  "price_eur": 3400,
+  "status": "available",
+  "image": "/img/works/digital.jpg",
+  "sort": 28,
+  "w": 1116,
+  "h": 1600,
+  "thumb": "/img/works/digital-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/digital-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "awards": [
+   "Verdiensturkunde, Luxembourg Art Prize 2025"
+  ],
+  "exhibitions": [
+   "Modrý Brouk, Slovanský dům, Prag, ab 2027",
+   "Barockschloss Gleina, 2026",
+   "TV Club Leipzig, 2026"
+  ]
+ },
+ {
+  "slug": "flucht",
+  "title": "FLUCHT",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, UV reaktiv, Schattenfugenrahmen",
+  "size": "74 x 104 x 3 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Eine Person bewegt sich nach links zum Meer hin. Sie trägt dunkle Bekleidung und eine Kapuze, die sie tief ins Gesicht gezogen hat. Während das gesamte Gemälde Schwarz-Weiß gestaltet ist, scheint die Person die Leinwand mit etwas wie einem langen Stock aufzureißen. Darunter kommt eine neonrote Schicht zum Vorschein.",
+  "price_eur": 3400,
+  "status": "available",
+  "image": "/img/works/flucht.jpg",
+  "sort": 29,
+  "w": 1600,
+  "h": 1107,
+  "thumb": "/img/works/flucht-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/flucht-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/flucht-uv.jpg",
+  "awards": [],
+  "exhibitions": []
+ },
+ {
+  "slug": "rose",
+  "title": "ROSÉ",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, UV-sensible Farben, Roségoldblättchen",
+  "size": "80 x 60 x 1,5 cm",
+  "format": "mittel",
+  "series": null,
+  "description": "Das Gemälde ist ein intensives, monochromes Nahporträt einer Frau mit Sommersprossen. Ihr Blick wird dominiert von leuchtendem rosé-goldenem Lidschatten, während das Gesicht durch starke Hell-Dunkel-Kontraste modelliert wird. Über ihrem Mund befindet sich ein markanter, greller gelber Pinselstrich, der wie ein Zensurbalken oder ein emotionaler Ausdruck wirkt. Die Hände der Dargestellten, von denen eine das Gesicht halb verdeckt, verleihen der Komposition zusätzliche Dramatik.",
+  "price_eur": 2800,
+  "status": "available",
+  "image": "/img/works/rose.jpg",
+  "sort": 30,
+  "w": 1280,
+  "h": 1600,
+  "thumb": "/img/works/rose-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/rose-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   },
+   {
+    "src": "/img/works/rose-detail1.jpg",
+    "kind": "detail",
+    "w": 1200,
+    "h": 1600
+   }
+  ],
+  "awards": [],
+  "exhibitions": [
+   "DARK ART, Gallery Auxburg, Augsburg, November 2025",
+   "Cosy Festival, Schloss Dornburg, August 2025",
+   "FARBton, Galerie TscharT, Leipzig, April – Juni 2025"
+  ]
+ },
+ {
+  "slug": "dv",
+  "title": "D.V.",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand, Gold und UV-sensible Farben",
+  "size": "100 x 50 x 3,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Das Werk fängt die für Hübners Kunst charakteristische Verbindung von Malerei und Musik ein und thematisiert Emotionen und Identität. Die intensive Farbigkeit und die ikonische Darstellung sollen den Betrachter berühren, provozieren und im Gedächtnis bleiben. Die UV-sensiblen Farben sorgen unter Schwarzlicht für eine zweite Dimension, die den Betrachter zum Entdecker des Werks macht.",
+  "price_eur": 3000,
+  "status": "available",
+  "image": "/img/works/dv.jpg",
+  "sort": 31,
+  "w": 814,
+  "h": 1600,
+  "thumb": "/img/works/dv-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/dv-raum1.jpg",
+    "kind": "raum",
+    "w": 1228,
+    "h": 1600
+   }
+  ],
+  "uv_image": "/img/works/dv-uv.jpg",
+  "awards": [],
+  "exhibitions": [
+   "Barockschloss Gleina, Mai 2026",
+   "FARBton, Galerie TscharT, Leipzig, April – Juni 2025"
+  ]
+ },
+ {
+  "slug": "neon-scream",
+  "title": "NEON SCREAM",
+  "year": 2024,
+  "technique": "Acryl auf Leinwand in einem schwarzen Schattenfugenrahmen",
+  "size": "100 x 70 x 1,5 cm (ohne Rahmen)",
+  "format": "gross",
+  "series": null,
+  "description": "hyperrealistisches Schwarz-Weiß-Porträt einer schreienden Person, durchbrochen von dynamischen, leuchtend pinken (UV-reaktiven) Farbelementen. Das Werk repräsentiert Hübners Stil des modernen surrealistischen Realismus, der intensive Figuration und abstrakte Neon-Akzente kombiniert. Die Verwendung der UV-Farben ermöglicht eine veränderte visuelle Erfahrung unter Schwarzlicht. Das Bild wurde 2025 im Rahmen des Wettbewerbes \"Faces of humanity\" mit einem MERIT-AWARD ausgezeichnet.",
+  "price_eur": null,
+  "status": "available",
+  "image": "/img/works/neon-scream.jpg",
+  "sort": 32,
+  "w": 1200,
+  "h": 1600,
+  "thumb": "/img/works/neon-scream-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/neon-scream-raum1.jpg",
+    "kind": "raum",
+    "w": 1600,
+    "h": 1600
+   }
+  ],
+  "awards": [
+   "Merit Award, „Faces of Humanity“ 2025 (Fame Frame Gallery)"
+  ],
+  "exhibitions": [
+   "Arrival Gallery Madrid Art Show, Galería Nueva, Madrid, Dezember 2026",
+   "BAZAAR OF NEON, Neonbazaar Art Gallery, Stuttgart, April 2026",
+   "FARBton, Galerie TscharT, Leipzig, April – Juni 2025"
+  ]
+ },
+ {
+  "slug": "goettin",
+  "title": "GÖTTIN",
+  "year": 2025,
+  "technique": "Acryl auf Leinwand",
+  "size": "100 x 70 x 1,5 cm",
+  "format": "gross",
+  "series": null,
+  "description": "Das Werk zeigt eine Rückenfigur in einem roten Gewand, die vor einem tiefblauen Hintergrund positioniert ist. Auf der linken Seite des Bildes befindet sich ein markantes Goldfeld, das durch feine Farbläufe besticht. Typisch für Hübners Stil, der Malerei und Musik verbindet, zeichnet sich das Gemälde durch kraftvolle Kontraste, leuchtende Farben und tiefgründige Themen aus.",
+  "price_eur": 3200,
+  "status": "available",
+  "image": "/img/works/goettin.jpg",
+  "sort": 33,
+  "w": 1131,
+  "h": 1600,
+  "thumb": "/img/works/goettin-sm.jpg",
+  "gallery": [
+   {
+    "src": "/img/works/goettin-raum1.jpg",
+    "kind": "raum",
+    "w": 1600,
+    "h": 899
+   }
+  ],
+  "awards": [],
+  "exhibitions": [
+   "FARBton, Galerie TscharT, Leipzig, April – Juni 2025"
+  ]
+ }
+]
