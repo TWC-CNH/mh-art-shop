@@ -665,7 +665,8 @@ final class AtelierController
                     self::loginPage("Zu viele Fehlversuche. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
                 }
             }
-            $code = trim(Http::post('code', 10)) !== '' ? Http::post('code', 10) : Http::post('notfallcode', 20);
+            // Beide Felder lang genug lesen: ein Notfall-Code (XXXXX-XXXXX) im Code-Feld wird so auch erkannt
+            $code = trim(Http::post('code', 20)) !== '' ? Http::post('code', 20) : Http::post('notfallcode', 20);
             $user = AtelierAuth::attempt($name, Http::post('passwort', 500), $code);
             if ($user) {
                 RateLimit::reset('login', $ip);

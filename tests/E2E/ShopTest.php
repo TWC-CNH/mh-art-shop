@@ -278,6 +278,8 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('Noch 9 Notfall-Code(s) übrig', $viaRecovery->get('/atelier?ok=notfall&n=9')->body);
         $this->assertSame(401, (new Client('192.0.2.18'))->post('/atelier/login', $rec)->status, 'Notfall-Code ein zweites Mal');
         $this->assertSame(401, (new Client('192.0.2.18'))->post('/atelier/login', ['passwort' => 'falsch-falsch'] + ['notfallcode' => $codes[1]] + $rec)->status, 'Notfall-Code ohne richtiges Passwort');
+        // Notfall-Code versehentlich ins normale Code-Feld getippt (11 Zeichen): wird trotzdem erkannt
+        $this->assertSame(303, (new Client('192.0.2.21'))->post('/atelier/login', ['benutzer' => $user[0], 'passwort' => Stack::PASSWORD, 'code' => $codes[3]])->status);
         \App\AtelierAuth::newRecoveryCodes($user[0]);
         $this->assertSame(401, (new Client('192.0.2.19'))->post('/atelier/login', ['notfallcode' => $codes[2]] + $rec)->status, 'alte Codes nach Neuerzeugung ungültig');
 

@@ -5,6 +5,8 @@ PHP und MariaDB auf einem Hetzner-Webhosting, **Stripe** nur als Kasse. Matthias
 auf der passwortgeschützten Seite `/atelier` (Fotos, Preise, Texte, Verkauft/Ausblenden).
 
 > Die frühere Netlify-Fassung (Node.js, Stripe als Artikelverwaltung) liegt auf dem Branch `main`.
+> Sie war nie live: Es gibt weder verkaufte Werke noch Widerrufe, offene Stripe-Sitzungen oder Fotos aus dieser Fassung,
+> die übernommen werden müssten. Der Startbestand kommt vollständig aus `data/catalog.json` (`bin/import-catalog.php`).
 
 ## Was der Shop kann
 
