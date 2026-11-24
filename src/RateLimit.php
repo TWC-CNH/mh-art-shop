@@ -40,9 +40,10 @@ final class RateLimit
         return Crypto::pseudonym($id, 'rl|' . $bucket);
     }
 
+    /** Fenstergrenze mit der Uhr der Datenbank (sie schreibt auch die Zeitpunkte), nicht mit der von PHP. */
     private static function since(int $windowSec): string
     {
-        return gmdate('Y-m-d H:i:s', time() - $windowSec);
+        return (string) Db::one('SELECT UTC_TIMESTAMP(3) - INTERVAL ? SECOND AS t', [$windowSec])['t'];
     }
 
     /** Anzahl der Versuche im Fenster, ohne einen neuen zu zählen. */
@@ -75,8 +76,8 @@ final class RateLimit
             if ($pos > $limit) {
                 Db::run('DELETE FROM rate_limits WHERE id = ?', [$mine]);
                 $first = Db::one('SELECT MIN(zeitpunkt) AS t FROM rate_limits WHERE bucket = ? AND schluessel = ? AND zeitpunkt > ?', [$bucket, $k, $since]);
-                $t = $first['t'] ? strtotime($first['t'] . ' UTC') : time();
-                return ['ok' => false, 'retryAfter' => max(1, $t + $windowSec - time())];
+                $wait = Db::one('SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(3), ? + INTERVAL ? SECOND) AS s', [$first['t'] ?? null, $windowSec])['s'] ?? null;
+                return ['ok' => false, 'retryAfter' => max(1, (int) ($wait ?? $windowSec))];
             }
             return ['ok' => true, 'retryAfter' => 0, 'id' => $mine];
         } catch (\Throwable $e) {
@@ -97,15 +98,14 @@ final class RateLimit
         }
     }
 
-    /** Die letzten $n gezählten Versuche eines Schlüssels zurücknehmen. */
-    public static function undoLatest(string $bucket, string $id, int $n): void
+    /** IDs der gezählten Versuche im Fenster (z. B. um gezielt eigene zurückzunehmen). @return list<int> */
+    public static function ids(string $bucket, string $id, int $windowSec): array
     {
-        if ($n > 0) {
-            try {
-                Db::run('DELETE FROM rate_limits WHERE bucket = ? AND schluessel = ? ORDER BY id DESC LIMIT ' . $n, [$bucket, self::key($bucket, $id)]);
-            } catch (\Throwable $e) {
-                Log::warn('Rate-Limit nicht zurücknehmbar: ' . $e->getMessage());
-            }
+        try {
+            return array_map(fn ($r) => (int) $r['id'], Db::all('SELECT id FROM rate_limits WHERE bucket = ? AND schluessel = ? AND zeitpunkt > UTC_TIMESTAMP(3) - INTERVAL ? SECOND', [$bucket, self::key($bucket, $id), $windowSec]));
+        } catch (\Throwable $e) {
+            Log::warn('Rate-Limit nicht lesbar: ' . $e->getMessage());
+            return [];
         }
     }
 

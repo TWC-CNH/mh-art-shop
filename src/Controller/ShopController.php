@@ -52,6 +52,10 @@ final class ShopController
                 }
             } catch (\Throwable $e) {
                 Log::warn('Session nicht gefunden: ' . $e->getMessage());
+                if ($own) {
+                    // Eigener Bezahlvorgang, Stripe gerade nicht erreichbar: nicht kommentarlos zur Startseite schicken
+                    Http::html(Render::processing(), 503);
+                }
             }
         }
         // Nur ein wirklich abgeschlossener Bezahlvorgang bekommt die Bestätigung (und die Conversion).

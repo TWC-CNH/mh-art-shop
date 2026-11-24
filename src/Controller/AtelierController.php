@@ -56,7 +56,7 @@ final class AtelierController
             'entfernt' => 'Werk aus dem Shop entfernt.',
             'entfernen-bezahlvorgang' => 'Nicht entfernt: Für dieses Werk läuft gerade ein Bezahlvorgang, der sich nicht beenden ließ. Bitte in einer halben Stunde erneut versuchen.',
             'verkauft-zahlung-laeuft' => 'Gespeichert als „Verkauft“. Achtung: Ein laufender Bezahlvorgang ließ sich nicht beenden. Zahlt der Käufer noch, erscheint hier ein Hinweis zur Erstattung.',
-            'bezahlvorgang-laeuft' => 'Gespeichert. Ein laufender Bezahlvorgang ließ sich gerade nicht beenden; das Werk bleibt bis zu dessen Ablauf reserviert. Bitte später prüfen.',
+            'bezahlvorgang-laeuft' => 'Teilweise gespeichert: Ein laufender Bezahlvorgang ließ sich gerade nicht beenden. Preis, Versand und Sichtbarkeit bleiben deshalb unverändert, das Werk bleibt bis zum Ablauf reserviert. Bitte später erneut speichern.',
             'bezahlvorgang-beendet' => 'Gespeichert. Ein laufender Bezahlvorgang für dieses Werk wurde beendet, weil sich Preis, Versand oder Sichtbarkeit geändert haben.',
             'nicht-mehr-da' => 'Das Werk wurde inzwischen aus dem Shop entfernt. Die Änderungen wurden nicht gespeichert.',
             'notfall' => "Mit Notfall-Code angemeldet. Noch $n Notfall-Code(s) übrig. Bitte die Authenticator-App neu einrichten lassen (bin/atelier-user.php 2fa).",
@@ -382,7 +382,8 @@ final class AtelierController
 
         $expire = null;
         $releaseAfterExpire = false;
-        $r = Db::transaction(function () use ($id, $data, $status, $statusChanged, $main, $uv, $rest, &$expire, &$releaseAfterExpire) {
+        $restoreTerms = null;
+        $r = Db::transaction(function () use ($id, $data, $status, $statusChanged, $main, $uv, $rest, &$expire, &$releaseAfterExpire, &$restoreTerms) {
             if ($id === 0) {
                 $data['slug'] = Catalog::uniqueSlug($data['titel']);
                 $data['status'] = $status;
@@ -450,6 +451,8 @@ final class AtelierController
                         // fertige Stripe-Sitzung: erst bei Stripe schließen, dann freigeben (nach der Transaktion)
                         $expire = $runningSession;
                         $releaseAfterExpire = true;
+                        // Scheitert das Schließen, gelten die alten Bedingungen weiter (sonst würde ausgeblendet/zum alten Preis verkauft)
+                        $restoreTerms = ['sichtbar' => $prev['sichtbar'], 'preis_cent' => $prev['preis_cent'], 'versand_cent' => $prev['versand_cent'], 'format' => $prev['format']];
                     } else {
                         // entstehende Sitzung (pending_…): Reservierung aufheben, der Checkout schließt seine Sitzung selbst
                         Db::run('UPDATE werke SET reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND reserviert_session = ?', [$id, $runningSession]);
@@ -480,6 +483,9 @@ final class AtelierController
                 if (isset($r['msg'])) {
                     // Reservierung bleibt bis zum Ablauf bzw. Verkauf von Hand mit laufender Zahlung: ehrlich melden
                     $r['msg'] = $releaseAfterExpire ? 'bezahlvorgang-laeuft' : 'verkauft-zahlung-laeuft';
+                }
+                if ($restoreTerms !== null && isset($r['id'])) {
+                    Db::run('UPDATE werke SET sichtbar = ?, preis_cent = ?, versand_cent = ?, format = ? WHERE id = ?', [...array_values($restoreTerms), $r['id']]);
                 }
             }
         }
@@ -676,8 +682,12 @@ final class AtelierController
                 // Fehlversuche gegen andere Benutzer von derselben IP bleiben stehen, sonst könnte ein gültiger Zugang
                 // die IP-Grenze immer wieder löschen.
                 RateLimit::undo($slot['id'] ?? null);
-                RateLimit::undoLatest('login', $ip, RateLimit::attempts('login-eigene', $name . '|' . $ip, $win));
-                RateLimit::reset('login-eigene', $name . '|' . $ip);
+                foreach (RateLimit::ids('login', $ip, $win) as $rid) {
+                    if (RateLimit::attempts('login-eigene', "$name|$ip|$rid", $win) > 0) {
+                        RateLimit::undo($rid);
+                        RateLimit::reset('login-eigene', "$name|$ip|$rid");
+                    }
+                }
                 RateLimit::reset('login-user', $name);
                 RateLimit::reset('login-user-ip', $name . '|' . $ip);
                 AtelierAuth::login($user);
@@ -688,7 +698,9 @@ final class AtelierController
                 Http::redirect('/atelier');
             }
             RateLimit::hit('login-user', $name, PHP_INT_MAX, $win); // Fehlversuch je Benutzer zählen
-            RateLimit::hit('login-eigene', $name . '|' . $ip, PHP_INT_MAX, $win); // für die Rückgabe bei späterem Erfolg
+            if (isset($slot['id'])) {
+                RateLimit::hit('login-eigene', "$name|$ip|{$slot['id']}", PHP_INT_MAX, $win); // dieser IP-Platz gehört zu diesem Benutzer
+            }
             // bewusst ohne Hinweis, welcher der drei Werte falsch war
             self::loginPage('Anmeldung fehlgeschlagen. Bitte Benutzername, Passwort und Code prüfen.');
         }

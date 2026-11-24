@@ -305,7 +305,7 @@ final class CheckoutController
                 }
                 // Nur freigeben, wenn die Sitzung sicher nicht mehr bezahlt werden kann. Ist sie noch offen (z. B. in einem
                 // zweiten Tab) oder unbekannt, bleibt die Reservierung bis zum Ablauf bzw. bis zum Webhook „expired“.
-                $werkId = (int) ($session->metadata['werk_id'] ?? 0);
+                $werkId = (int) ($session?->metadata['werk_id'] ?? 0);
                 if ($session && in_array($session->status, ['expired'], true) && $werkId) {
                     $released = Catalog::release($werkId, $id);
                     Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$id]);
@@ -416,6 +416,7 @@ final class CheckoutController
                 case 'checkout.session.async_payment_failed':
                     if ($werkId) {
                         Catalog::markAvailable($werkId, $sid);
+                        Catalog::release($werkId, $sid); // kam „failed“ vor „completed“: nur reserviert, nicht verkauft
                         Db::run('UPDATE bestellungen SET status = \'fehlgeschlagen\' WHERE stripe_session_id = ?', [$sid]);
                     }
                     break;

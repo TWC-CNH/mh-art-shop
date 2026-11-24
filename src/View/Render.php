@@ -960,6 +960,18 @@ final class Render
         return self::layout(['title' => 'Danke für Ihren Kauf', 'body' => $body, 'canonical' => '/danke', 'noindex' => true, 'bodyClass' => 'page-thanks']);
     }
 
+    /** Danke-Seite, wenn Stripe gerade nicht antwortet: ohne Zusage, aber mit klarem nächsten Schritt. */
+    public static function processing(): string
+    {
+        $mail = e(cfg()['contactEmail']);
+        return self::layout([
+            'title' => 'Bestellung wird geprüft',
+            'noindex' => true,
+            'canonical' => '/danke',
+            'body' => '<section class="legal"><h1>Ihre Bestellung wird gerade geprüft.</h1><p>Der Zahlungsdienst antwortet im Moment nicht. Bitte kaufen Sie das Werk nicht noch einmal: Ist die Zahlung durchgegangen, bekommen Sie in Kürze eine Bestätigung per E-Mail. Sie können diese Seite auch in einer Minute neu laden.</p><p>Fragen? <a href="mailto:' . $mail . '">' . $mail . '</a></p></section>',
+        ]);
+    }
+
     public static function notFound(): string
     {
         return self::layout([

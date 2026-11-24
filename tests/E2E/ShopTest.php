@@ -1014,6 +1014,7 @@ final class ShopTest extends TestCase
             $stripeCfg(['fail_expire' => false]);
         }
         $this->assertStringEndsWith('?ok=bezahlvorgang-laeuft', (string) $r->header('location'));
+        $this->assertSame((int) $w['preis_cent'], (int) self::werk($b)['preis_cent'], 'alter Preis gilt weiter, solange die Sitzung offen ist');
         $this->assertSame($w['reserviert_session'], self::werk($b)['reserviert_session']);
 
         // Foto, das nicht (mehr) existiert, wird beim Speichern gemeldet statt kaputt verlinkt
@@ -1330,5 +1331,43 @@ final class ShopTest extends TestCase
             Db::run("UPDATE werke SET verkauft_session = ? WHERE id = ?", [$alt["verkauft_session"], $id]);
             Db::run("DELETE FROM bestellungen WHERE stripe_session_id IN (\"cs_alt_offen\", \"cs_alt_sepa\")");
         }
+    }
+
+    /** Dreißigstes Review von PR #1 */
+    public function testDreissigstesReview(): void
+    {
+        // Login-Erfolg gibt nur die eigenen Fehlversuche zurück, nicht die gegen andere Benutzer
+        $user = Stack::createUser();
+        $ip = new Client("203.0.113.80");
+        $bad = fn (string $n) => $ip->post("/atelier/login", ["benutzer" => $n, "passwort" => "falsch", "code" => "000000"])->status;
+        $this->assertSame(401, $bad($user[0]));
+        $this->assertSame(401, $bad("opfer"));
+        $this->assertSame(303, $ip->post("/atelier/login", Stack::credentials($user))->status);
+        $this->assertSame(401, $bad("opfer"));
+        $this->assertSame(401, $bad("opfer"));
+        $this->assertSame(429, $bad("opfer"), "Fehlversuch gegen opfer blieb gezählt");
+
+        $free = array_column(Db::all("SELECT slug FROM werke WHERE status = \x27available\x27 AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 2"), "slug");
+
+        // „failed“ vor „completed“: Reservierung sofort frei
+        self::buy($free[0]);
+        $w = self::werk($free[0]);
+        Stack::webhook("checkout.session.async_payment_failed", ["id" => $w["reserviert_session"], "status" => "complete", "payment_status" => "unpaid", "metadata" => ["werk_id" => (string) $w["id"]]]);
+        $this->assertNull(self::werk($free[0])["reserviert_session"]);
+
+        // Danke-Seite im eigenen Browser, Stripe nicht erreichbar: Hinweis statt Startseite
+        $buyer = new Client("198.51.100.170");
+        self::buy($free[1], $buyer);
+        $sid = self::werk($free[1])["reserviert_session"];
+        $cfg = fn (array $c) => file_get_contents("http://127.0.0.1:" . Stack::STRIPE_PORT . "/__test/config", false, stream_context_create(["http" => ["method" => "POST", "header" => "Content-Type: application/json", "content" => json_encode($c)]]));
+        $cfg(["fail_retrieve" => true]);
+        try {
+            $r = $buyer->get("/danke?session_id=$sid");
+        } finally {
+            $cfg(["fail_retrieve" => false]);
+        }
+        $this->assertSame(503, $r->status);
+        $this->assertStringContainsString("nicht noch einmal", $r->body);
+        Db::run("UPDATE werke SET reserviert_bis = NULL, reserviert_session = NULL WHERE slug = ?", [$free[1]]);
     }
 }
