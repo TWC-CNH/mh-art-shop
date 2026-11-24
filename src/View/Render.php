@@ -8,11 +8,11 @@ use App\Works;
 
 /**
  * Serverseitiges Rendering aller Seiten (kein Framework, reines HTML).
- * 1:1-Port von lib/render.mjs; die Ausgabe ist bytegleich zur Node-Fassung (siehe tests/parity).
+ * Ursprünglich 1:1 aus der Node-Fassung (Branch main) übernommen; die Ausgabe war bytegleich.
  */
 final class Render
 {
-    public const ASSET_V = '15';
+    public const ASSET_V = '16';
 
     public const KIND_LABEL = ['detail' => 'Detail', 'raum' => 'Im Raum', 'ansicht' => 'Ansicht'];
 
@@ -922,7 +922,8 @@ final class Render
             } elseif (array_key_exists('id', $session)) {
                 $data['transaction_id'] = null;
             }
-            $conversion = '<script>window.__mhConversion=' . self::json($data) . ';</script>';
+            // Daten-Block statt Inline-Skript (Content-Security-Policy); shop.js liest ihn aus
+            $conversion = '<script type="application/json" id="mh-conversion">' . str_replace('<', '\u003c', self::json($data)) . '</script>';
         }
         $body = '
 <section class="thanks">

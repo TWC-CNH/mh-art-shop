@@ -1,10 +1,4 @@
-.atelier-uploads/
 .env
-.netlify/
-.test-uploads/
-node_modules/
-.test-records/
-.records/
 .idea/
 /#__DATA/
 vendor/
@@ -12,4 +6,5 @@ vendor/
 storage/
 public/bilder/*
 !public/bilder/.htaccess
-tests/parity/out/
+# nur für den Wechsel auf die Node-Fassung (Branch main)
+node_modules/

@@ -44,6 +44,7 @@ header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 header('X-Frame-Options: SAMEORIGIN');
+header('Content-Security-Policy: ' . \App\Csp::header());
 
 $path = Http::path();
 

@@ -45,6 +45,24 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('action="/anfrage"', $r->body);
     }
 
+    public function testContentSecurityPolicyPasstZumHtml(): void
+    {
+        $c = new Client();
+        foreach (['/', '/werk/nacht', '/impressum', '/vertrag-widerrufen', '/atelier', '/danke'] as $path) {
+            $r = $c->get($path);
+            $csp = (string) $r->header('content-security-policy');
+            $this->assertStringContainsString("script-src 'self' 'sha256-", $csp, $path);
+            $this->assertStringNotContainsString("'unsafe-inline' https", $csp);
+            $this->assertMatchesRegularExpression("/script-src 'self' 'sha256-[^']+'(;|$)/", $csp, 'ohne Google-Tag keine fremden Skriptquellen');
+            preg_match_all('#<script(?![^>]*\bsrc=)(?![^>]*type="application/(?:ld\+)?json")[^>]*>(.*?)</script>#s', $r->body, $m);
+            foreach ($m[1] as $inline) {
+                $hash = "'sha256-" . base64_encode(hash('sha256', $inline, true)) . "'";
+                $this->assertStringContainsString($hash, $csp, "Inline-Skript ohne passenden Hash auf $path: " . substr($inline, 0, 60));
+            }
+            $this->assertDoesNotMatchRegularExpression('/\son[a-z]+="/i', $r->body, "Inline-Ereignis auf $path");
+        }
+    }
+
     public function testCheckoutReserviertDasWerk(): void
     {
         $r = self::buy('cool', self::$buyer);

@@ -417,7 +417,8 @@
       s.async = true;
       s.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tagId)}`;
       document.head.appendChild(s);
-      if (window.__mhConversion) gtag('event', 'conversion', window.__mhConversion);
+      const conv = document.getElementById('mh-conversion');
+      if (conv) { try { gtag('event', 'conversion', JSON.parse(conv.textContent)); } catch {} }
     };
     const choice = store.get('mh-consent');
     if (choice === 'grant') loadTag();
