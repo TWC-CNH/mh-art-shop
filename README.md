@@ -90,8 +90,8 @@ Dateien per **FTP**, alles Weitere per **SSH**.
    /usr/bin/php8.4 -m | grep -E 'pdo_mysql|sodium|gd|curl|mbstring'
    mkdir -p ~/logs ~/run ~/backups
    ```
-5. Lokal: `composer install --no-dev --optimize-autoloader` und `composer test`
-6. Per **FTP** hochladen nach `/public_html/matthiashuebner.art` – **mit** `vendor/`, **ohne** `.env`, `.git/`, `.idea/`, `tests/`, `storage/`
+5. Lokal: `composer test`, dann `php bin/build-release.php` – stellt `build/release/` zusammen (mit `vendor/` ohne Entwicklungspakete, ohne `.env`, Tests und Git-Daten)
+6. Inhalt von `build/release/` per **FTP** nach `/public_html/matthiashuebner.art` hochladen
 7. `.env` auf dem Server anlegen (Vorlage `.env.example`), `chmod 600 .env`. Dort `LOG_DIR` und `RUN_DIR` auf `~/logs` und `~/run` (absolute Pfade)
 8. Schema und Werke, dann Selbsttest:
    ```bash
@@ -117,7 +117,7 @@ Dateien per **FTP**, alles Weitere per **SSH**.
 14. **Sicherung:** Datenbank-Backup in konsoleH aktivieren; `.env` (mit `DATA_ENCRYPTION_KEY`!) und `public/bilder/` mitsichern
 15. Auf **Live-Schlüssel** umstellen (`sk_live_…`, neuer Webhook im Live-Modus), Google Merchant Center: Feed `https://matthiashuebner.art/feed.xml`
 
-**Nach jedem späteren Deployment:** hochladen, dann `bin/migrate.php` und `bin/smoke.php`.
+**Nach jedem späteren Deployment:** `php bin/build-release.php`, hochladen, dann `bin/migrate.php` und `bin/smoke.php`.
 
 ## Aufbau
 

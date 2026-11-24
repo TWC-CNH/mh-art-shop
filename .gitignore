@@ -8,3 +8,4 @@ public/bilder/*
 !public/bilder/.htaccess
 # nur für den Wechsel auf die Node-Fassung (Branch main)
 node_modules/
+build/
