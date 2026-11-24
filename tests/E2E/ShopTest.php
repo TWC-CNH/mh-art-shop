@@ -327,6 +327,58 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('name="passwort"', $stolen->request('GET', '/atelier', null, ["Cookie: mh_atelier=$token"])->body);
     }
 
+    /** Zweites Review von PR #1: Verkäufe dürfen durch das Atelier nicht verloren gehen, Checkout nur von der eigenen Seite. */
+    public function testVerkaufGehtImAtelierNichtVerlorenUndCheckoutNurVonDerEigenenSeite(): void
+    {
+        [$c, $csrf] = self::login('192.0.2.13');
+        $free = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id DESC LIMIT 3"), 'slug');
+
+        // fremde Seite darf keinen Bezahlvorgang auslösen
+        $foreign = (new Client('198.51.100.200'))->post('/api/checkout', ['slug' => $free[0]], ['Origin: https://boese.example']);
+        $this->assertSame(403, $foreign->status);
+        $this->assertNull(self::werk($free[0])['reserviert_session']);
+
+        // Formular geöffnet, dann kommt ein Verkauf über den Shop herein, dann speichert Matthias einen Tippfehler
+        $w = self::werk($free[0]);
+        $form = $c->get('/atelier/werk/' . $w['id'])->body;
+        $this->assertStringContainsString('name="status_geladen" value="available"', $form);
+        $this->assertSame(200, self::buy($free[0])->status);
+        $sid = self::werk($free[0])['reserviert_session'];
+        Stack::webhook('checkout.session.completed', ['id' => $sid, 'status' => 'complete', 'payment_status' => 'paid', 'amount_total' => 100, 'metadata' => ['werk_id' => (string) $w['id']]]);
+        $save = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $w['id'], 'titel' => $w['titel'] . ' ', 'masse' => $w['masse'], 'preis' => (string) ($w['preis_cent'] / 100), 'status' => 'available', 'status_geladen' => 'available', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertSame(303, $save->status);
+        $this->assertStringContainsString('inzwischen%20verkauft', $save->header('location'));
+        $after = self::werk($free[0]);
+        $this->assertSame('sold', $after['status']);
+        $this->assertSame($sid, $after['verkauft_session']);
+
+        // bewusst von „Verkauft“ auf „Verfügbar“ umgestellt: das gilt
+        $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $w['id'], 'titel' => $w['titel'], 'masse' => $w['masse'], 'status' => 'available', 'status_geladen' => 'sold', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertSame('available', self::werk($free[0])['status']);
+
+        // Bestellstatus fällt bei vertauschter Reihenfolge der Ereignisse nicht von „bezahlt“ zurück
+        $this->assertSame(200, self::buy($free[1])->status);
+        $w1 = self::werk($free[1]);
+        $obj = ['id' => $w1['reserviert_session'], 'status' => 'complete', 'metadata' => ['werk_id' => (string) $w1['id']]];
+        Stack::webhook('checkout.session.async_payment_succeeded', ['payment_status' => 'paid'] + $obj);
+        Stack::webhook('checkout.session.completed', ['payment_status' => 'unpaid'] + $obj);
+        $this->assertSame('bezahlt', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$obj['id']])['status']);
+
+        // Werk wird im Atelier verkauft, während jemand bezahlt: die Stripe-Sitzung wird geschlossen
+        $this->assertSame(200, self::buy($free[2])->status);
+        $w2 = self::werk($free[2]);
+        $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $w2['id'], 'titel' => $w2['titel'], 'masse' => $w2['masse'], 'status' => 'sold', 'status_geladen' => 'reserved', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertSame('sold', self::werk($free[2])['status']);
+        $this->assertSame('expired', Stack::stripeSessions()[$w2['reserviert_session']]['status']);
+
+        // Atelier-Liste: Vorschaubilder von Uploads zeigen auf die -xs-Datei, die es gibt
+        $list = $c->get('/atelier')->body;
+        $this->assertStringNotContainsString('-sm-xs.jpg', $list);
+        $this->assertMatchesRegularExpression('#/bilder/[0-9a-f-]+-xs\.jpg#', $list);
+        preg_match('#/bilder/[0-9a-f-]+-xs\.jpg#', $list, $m);
+        $this->assertSame(200, $c->get($m[0])->status);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

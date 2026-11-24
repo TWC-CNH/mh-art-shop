@@ -149,11 +149,17 @@ final class Catalog
             if (!$r) {
                 return ['alreadySold' => false];
             }
-            $already = $r['status'] === 'sold' && $r['verkauft_session'] && $r['verkauft_session'] !== $sessionId;
-            Db::run(
-                'UPDATE werke SET status = \'sold\', verkauft_am = UTC_DATE(), verkauft_session = ?, doppelverkauf_session = ?, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?',
-                [$already ? $r['verkauft_session'] : $sessionId, $already ? $sessionId : $r['doppelverkauf_session'], $id]
-            );
+            // Schon verkauft – über eine andere Sitzung oder von Hand im Atelier (verkauft_session leer)?
+            $already = $r['status'] === 'sold' && $r['verkauft_session'] !== $sessionId;
+            if ($already) {
+                // Bisherigen Verkauf behalten; die erste weitere Zahlung bleibt als Hinweis zur Erstattung stehen
+                Db::run('UPDATE werke SET doppelverkauf_session = COALESCE(doppelverkauf_session, ?), reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$sessionId, $id]);
+            } else {
+                Db::run(
+                    'UPDATE werke SET status = \'sold\', verkauft_am = COALESCE(verkauft_am, UTC_DATE()), verkauft_session = ?, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?',
+                    [$sessionId, $id]
+                );
+            }
             return ['alreadySold' => (bool) $already];
         });
     }

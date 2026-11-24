@@ -20,9 +20,16 @@ final class RateLimit
         $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unbekannt');
         $trusted = array_filter(array_map('trim', explode(',', Env::get('TRUSTED_PROXIES'))));
         if ($trusted && in_array($remote, $trusted, true)) {
-            $fwd = trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''))[0]);
-            if (filter_var($fwd, FILTER_VALIDATE_IP)) {
-                return $fwd;
+            // Von rechts lesen: Jeder Proxy hängt die Adresse seines Absenders hinten an, die linken Einträge
+            // kann der Besucher selbst setzen. Die erste nicht vertrauenswürdige Adresse von rechts ist der Besucher.
+            $chain = array_reverse(array_map('trim', explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''))));
+            foreach ($chain as $addr) {
+                if (!filter_var($addr, FILTER_VALIDATE_IP)) {
+                    break;
+                }
+                if (!in_array($addr, $trusted, true)) {
+                    return $addr;
+                }
             }
         }
         return $remote;

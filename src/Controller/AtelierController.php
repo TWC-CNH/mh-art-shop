@@ -63,7 +63,7 @@ final class AtelierController
 
     private static function thumbOf(string $u): string
     {
-        return preg_match('#^/bilder/[a-z0-9-]+\.jpg$#', $u) ? preg_replace('/\.jpg$/', '-xs.jpg', $u) : $u;
+        return preg_match('#^/bilder/[a-z0-9-]+\.jpg$#', $u) ? preg_replace('/(-sm|-xs)?\.jpg$/', '-xs.jpg', $u) : $u;
     }
 
     // ---------- Ansichten ----------
@@ -168,6 +168,7 @@ final class AtelierController
           <label class="field"><span>Preis in Euro</span><input name="preis" inputmode="decimal" value="' . $v($priceEur) . '" placeholder="leer = Preis auf Anfrage"></label>
           <label class="field"><span>Eigener Versandpreis <em>(optional)</em></span><input name="versand" inputmode="decimal" value="' . $v($shipEur) . '" placeholder="sonst nach Größe"></label>
           <fieldset class="field field--wide at-radios"><legend>Status</legend>' . $statusNote . '
+            <input type="hidden" name="status_geladen" value="' . $v($w['_status_geladen'] ?? ($w['status'] ?? 'available')) . '">
             <label><input type="radio" name="status" value="available" ' . ($status !== 'sold' ? 'checked' : '') . '> Verfügbar</label>
             <label><input type="radio" name="status" value="sold" ' . ($status === 'sold' ? 'checked' : '') . '> Verkauft</label>
           </fieldset>
@@ -258,6 +259,7 @@ final class AtelierController
             '_price' => Http::post('preis', 20),
             '_ship' => Http::post('versand', 20),
             '_status' => Http::post('status') === 'sold' ? 'sold' : 'available',
+            '_status_geladen' => Http::post('status_geladen', 20),
             '_hidden' => Http::post('sichtbar') === 'nein',
         ]);
     }
@@ -293,6 +295,10 @@ final class AtelierController
         }
         $rest = array_values(array_filter(array_slice($images, 1), fn ($x) => $x !== $uv));
         $status = Http::post('status') === 'sold' ? 'sold' : 'available';
+        // Status nur ändern, wenn Matthias ihn im Formular wirklich umgestellt hat. Sonst könnte ein Speichern
+        // einen Verkauf überschreiben, der nach dem Öffnen des Formulars über den Shop hereinkam.
+        $loaded = Http::post('status_geladen', 20);
+        $statusChanged = !in_array($loaded, ['available', 'reserved', 'sold'], true) || ($status === 'sold') !== ($loaded === 'sold');
         $size = trim(Http::post('masse', 80));
 
         $data = [
@@ -314,7 +320,8 @@ final class AtelierController
             'ausstellungen' => json_encode(self::lines(Http::post('ausstellungen')), JSON_UNESCAPED_UNICODE),
         ];
 
-        return Db::transaction(function () use ($id, $data, $status, $main, $uv, $rest) {
+        $expire = null;
+        $r = Db::transaction(function () use ($id, $data, $status, $statusChanged, $main, $uv, $rest, &$expire) {
             if ($id === 0) {
                 $data['slug'] = Catalog::uniqueSlug($data['titel']);
                 $data['status'] = $status;
@@ -323,7 +330,7 @@ final class AtelierController
                 $id = Db::lastId();
                 $msg = 'Werk angelegt. Es erscheint sofort im Shop.';
             } else {
-                $prev = Db::one('SELECT status, masse, format, thumb FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
+                $prev = Db::one('SELECT status, masse, format, thumb, reserviert_session, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
                 if (!$prev) {
                     return ['error' => 'Das Werk gibt es nicht mehr.'];
                 }
@@ -338,12 +345,18 @@ final class AtelierController
                 }
                 $set = implode(', ', array_map(fn ($c) => "$c = ?", array_keys($data)));
                 Db::run("UPDATE werke SET $set WHERE id = ?", [...array_values($data), $id]);
-                if ($status === 'sold' && $prev['status'] !== 'sold') {
-                    Db::run('UPDATE werke SET status = \'sold\', verkauft_am = UTC_DATE(), reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
-                } elseif ($status === 'available' && $prev['status'] === 'sold') {
-                    Db::run('UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL, doppelverkauf_session = NULL WHERE id = ?', [$id]);
-                }
                 $msg = 'Gespeichert. Der Shop zeigt die Änderung sofort.';
+                if ($statusChanged && $status === 'sold' && $prev['status'] !== 'sold') {
+                    Db::run('UPDATE werke SET status = \'sold\', verkauft_am = UTC_DATE(), reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
+                    // Läuft gerade ein Bezahlvorgang, die Stripe-Sitzung schließen, damit niemand mehr bezahlen kann
+                    if ((int) $prev['reserviert'] && str_starts_with((string) $prev['reserviert_session'], 'cs_')) {
+                        $expire = $prev['reserviert_session'];
+                    }
+                } elseif ($statusChanged && $status === 'available' && $prev['status'] === 'sold') {
+                    Db::run('UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL, doppelverkauf_session = NULL WHERE id = ?', [$id]);
+                } elseif (!$statusChanged && $prev['status'] === 'sold' && $status !== 'sold') {
+                    $msg = 'Gespeichert. Achtung: Das Werk wurde inzwischen verkauft und bleibt „Verkauft“.';
+                }
             }
             Db::run('DELETE FROM werk_bilder WHERE werk_id = ?', [$id]);
             $i = 0;
@@ -356,6 +369,15 @@ final class AtelierController
             }
             return ['id' => $id, 'msg' => $msg];
         });
+        if ($expire !== null) {
+            try {
+                CheckoutController::stripe()?->checkout->sessions->expire($expire);
+                Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$expire]);
+            } catch (\Throwable $e) {
+                Log::warn('Offene Stripe-Sitzung nicht geschlossen: ' . $e->getMessage());
+            }
+        }
+        return $r;
     }
 
     /** Vorschaubild zum Hauptfoto: die mittlere Größe (-sm), sofern es sie gibt; sonst das Hauptfoto selbst (NULL). */
@@ -403,7 +425,11 @@ final class AtelierController
                 Http::jsonOut(['error' => 'Foto nicht lesbar'], 415);
             }
             $path = "$dir/$id$suffix.jpg";
-            imagejpeg($img, $path, 86);
+            if (!@imagejpeg($img, $path, 86) || !is_file($path) || filesize($path) === 0) {
+                self::cleanup([...$written, $path]);
+                Log::error('Foto konnte nicht gespeichert werden: ' . $path);
+                Http::jsonOut(['error' => 'Foto konnte nicht gespeichert werden'], 500);
+            }
             $written[] = $path;
         }
         Http::jsonOut(['url' => "/bilder/$id.jpg"]);

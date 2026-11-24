@@ -55,6 +55,10 @@ final class CheckoutController
             header('Allow: POST');
             exit('Method Not Allowed');
         }
+        if (!Http::sameOrigin()) {
+            http_response_code(403);
+            exit('Forbidden'); // fremde Seiten sollen keine Reservierungen auslösen können
+        }
         $cfg = Config::get();
         $slug = mb_substr((string) (Http::json()['slug'] ?? Http::post('slug', 140)), 0, 120);
         $back = fn (string $flag) => $cfg['siteUrl'] . '/werk/' . rawurlencode($slug) . "?$flag=1";
@@ -260,7 +264,7 @@ final class CheckoutController
                             Log::error("ACHTUNG: Werk $werkId wurde doppelt bezahlt (Sitzung $sid). Bitte im Stripe-Dashboard erstatten.");
                         }
                         $paid = ($obj->payment_status ?? '') === 'paid';
-                        Db::run('UPDATE bestellungen SET status = ?, betrag_cent = COALESCE(?, betrag_cent), bezahlt_am = IF(?, UTC_TIMESTAMP(), bezahlt_am) WHERE stripe_session_id = ?', [$paid ? 'bezahlt' : 'offen', $obj->amount_total ?? null, $paid ? 1 : 0, $sid]);
+                        Db::run('UPDATE bestellungen SET status = IF(status = \'bezahlt\', status, ?), betrag_cent = COALESCE(?, betrag_cent), bezahlt_am = IF(?, UTC_TIMESTAMP(), bezahlt_am) WHERE stripe_session_id = ?', [$paid ? 'bezahlt' : 'offen', $obj->amount_total ?? null, $paid ? 1 : 0, $sid]);
                     }
                     break;
                 case 'checkout.session.async_payment_failed':
