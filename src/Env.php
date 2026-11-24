@@ -39,6 +39,15 @@ final class Env
         }
     }
 
+    /** Ist der Schlüssel überhaupt gesetzt (auch leer)? */
+    public static function has(string $key): bool
+    {
+        if (!self::$loaded) {
+            self::load(dirname(__DIR__) . '/.env');
+        }
+        return getenv($key) !== false || array_key_exists($key, self::$file);
+    }
+
     public static function get(string $key, string $default = ''): string
     {
         if (!self::$loaded) {

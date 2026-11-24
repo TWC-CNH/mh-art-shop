@@ -57,9 +57,10 @@ final class Config
             'artistName' => $e('ARTIST_NAME', 'Matthias Hübner'),
             'tagline' => $e('SHOP_TAGLINE', 'Modern Surrealistic Realism'),
             'contactEmail' => $e('CONTACT_EMAIL', 'anfragen@matthiashuebner.art'),
-            'contactPhone' => $e('CONTACT_PHONE', '+49 177 6936000'),
-            'instagram' => $e('INSTAGRAM_URL', 'https://www.instagram.com/matthiashubner.art/'),
-            'facebook' => $e('FACEBOOK_URL', 'https://www.facebook.com/matthiashuebnerdraws/'),
+            // Optionale Angaben: ein leerer Wert in der .env blendet sie aus (statt den Standard zu zeigen)
+            'contactPhone' => Env::has('CONTACT_PHONE') ? Env::get('CONTACT_PHONE') : '+49 177 6936000',
+            'instagram' => Env::has('INSTAGRAM_URL') ? Env::get('INSTAGRAM_URL') : 'https://www.instagram.com/matthiashubner.art/',
+            'facebook' => Env::has('FACEBOOK_URL') ? Env::get('FACEBOOK_URL') : 'https://www.facebook.com/matthiashuebnerdraws/',
             'mainSite' => $e('MAIN_SITE_URL', 'https://www.novaspes.de'),
 
             'address' => [

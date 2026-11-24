@@ -60,7 +60,8 @@ final class Http
         $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
         $src = (string) ($_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? ''));
         if ($src === '') {
-            return true; // SameSite-Cookies schützen das Atelier zusätzlich
+            // Alle aktuellen Browser schicken bei POST einen Origin-Header. Fehlt Origin und Referer, lehnen wir ab.
+            return false;
         }
         $h = parse_url($src, PHP_URL_HOST);
         $p = parse_url($src, PHP_URL_PORT);

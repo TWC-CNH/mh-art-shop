@@ -41,7 +41,8 @@ try {
     Db::run('INSERT INTO merker (name, wert) VALUES (?, ?) ON DUPLICATE KEY UPDATE wert = VALUES(wert)', ['cron_letzter_lauf', gmdate('Y-m-d H:i:s')]);
 } catch (\Throwable $e) {
     Log::error('Cron-Fehler: ' . $e->getMessage());
-    exit(1);
+    $exitCode = 1;
 } finally {
     flock($lock, LOCK_UN);
 }
+exit($exitCode ?? 0);

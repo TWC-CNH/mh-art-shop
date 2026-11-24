@@ -270,7 +270,10 @@ final class Render
     <div>
       <p class="eyebrow">Kontakt</p>
       <p><a href="mailto:' . e($cfg['contactEmail']) . '">' . e($cfg['contactEmail']) . '</a><br>
-      <a href="' . e($cfg['instagram']) . '" rel="noopener" target="_blank">Instagram</a> · <a href="' . e($cfg['facebook']) . '" rel="noopener" target="_blank">Facebook</a><br>
+      ' . implode(' · ', array_filter([
+          $cfg['instagram'] !== '' ? '<a href="' . e($cfg['instagram']) . '" rel="noopener" target="_blank">Instagram</a>' : '',
+          $cfg['facebook'] !== '' ? '<a href="' . e($cfg['facebook']) . '" rel="noopener" target="_blank">Facebook</a>' : '',
+      ])) . ($cfg['instagram'] !== '' || $cfg['facebook'] !== '' ? '<br>' : '') . '
       <a href="' . e($cfg['mainSite']) . '" rel="noopener" target="_blank">novaspes.de</a></p>
     </div>
     <div>

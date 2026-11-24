@@ -508,6 +508,41 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('Werk aus dem Shop entfernt.', $c->get('/atelier?ok=entfernt')->body);
     }
 
+    /** Fünftes Review von PR #1 */
+    public function testFuenftesReview(): void
+    {
+        // POST ohne Origin und Referer wird abgelehnt
+        $noOrigin = (new Client('192.0.2.95'))->request('POST', '/anfrage', ['name' => 'A', 'email' => 'a@example.test', 'nachricht' => 'x', 'datenschutz' => 'ja']);
+        $this->assertSame(403, $noOrigin->status);
+
+        // Webhook ohne werk_id (z. B. ältere Sitzung) wird über den slug zugeordnet
+        $slug = Db::one("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 1")['slug'];
+        Stack::webhook('checkout.session.completed', ['id' => 'cs_test_alt_ohne_werkid', 'status' => 'complete', 'payment_status' => 'paid', 'metadata' => ['product_id' => 'prod_ALT', 'slug' => $slug]]);
+        $this->assertSame('sold', self::werk($slug)['status']);
+        $this->assertSame('cs_test_alt_ohne_werkid', self::werk($slug)['verkauft_session']);
+
+        [$c, $csrf] = self::login('192.0.2.96');
+        // Versandpreis: Tausenderpunkt und Komma wie beim Preis, 0 erlaubt, zu groß sauber abgelehnt
+        $w = self::werk('blick');
+        $base = ['csrf' => $csrf, 'id' => $w['id'], 'titel' => $w['titel'], 'masse' => $w['masse'], 'preis' => '390', 'status' => 'available', 'status_geladen' => 'available', 'sichtbar' => 'ja', 'bilder' => '[]'];
+        $this->assertSame(303, $c->post('/atelier/speichern', ['versand' => '1.234,50'] + $base)->status);
+        $this->assertSame(123450, (int) self::werk('blick')['versand_cent']);
+        $this->assertSame(303, $c->post('/atelier/speichern', ['versand' => '0'] + $base)->status);
+        $this->assertSame(0, (int) self::werk('blick')['versand_cent']);
+        $big = $c->post('/atelier/speichern', ['versand' => '99999999'] + $base);
+        $this->assertSame(422, $big->status);
+        $this->assertStringContainsString('Versandpreis ist ungültig', $big->body);
+
+        // Werk inzwischen entfernt: kein Entwurf als „Neues Werk“, kein Duplikat
+        $before = (int) Db::one('SELECT COUNT(*) AS n FROM werke')['n'];
+        Db::run('UPDATE werke SET aktiv = 0 WHERE id = ?', [$w['id']]);
+        $gone = $c->post('/atelier/speichern', ['titel' => 'Blick geändert'] + $base);
+        $this->assertSame(303, $gone->status);
+        $this->assertStringEndsWith('/atelier?ok=nicht-mehr-da', $gone->header('location'));
+        $this->assertSame($before, (int) Db::one('SELECT COUNT(*) AS n FROM werke')['n']);
+        Db::run('UPDATE werke SET aktiv = 1 WHERE id = ?', [$w['id']]);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

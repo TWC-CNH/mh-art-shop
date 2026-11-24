@@ -54,6 +54,7 @@ final class AtelierController
             'gespeichert' => 'Gespeichert. Der Shop zeigt die Änderung sofort.',
             'inzwischen-verkauft' => 'Gespeichert. Achtung: Das Werk wurde inzwischen verkauft und bleibt „Verkauft“.',
             'entfernt' => 'Werk aus dem Shop entfernt.',
+            'nicht-mehr-da' => 'Das Werk wurde inzwischen aus dem Shop entfernt. Die Änderungen wurden nicht gespeichert.',
             'notfall' => "Mit Notfall-Code angemeldet. Noch $n Notfall-Code(s) übrig. Bitte die Authenticator-App neu einrichten lassen (bin/atelier-user.php 2fa).",
             default => '',
         };
@@ -299,9 +300,10 @@ final class AtelierController
         if ($cents === -1) {
             return ['error' => 'Der Preis ist ungültig. Bitte nur eine Zahl eingeben, z. B. 2400.'];
         }
-        $shipRaw = str_replace(',', '.', trim(Http::post('versand', 20)));
-        if ($shipRaw !== '' && (!is_numeric($shipRaw) || (float) $shipRaw < 0)) {
-            return ['error' => 'Der Versandpreis ist ungültig.'];
+        $shipIn = trim(Http::post('versand', 20));
+        $shipCents = $shipIn === '' ? null : (preg_match('/^0+([.,]0*)?\s*€?$/u', $shipIn) ? 0 : self::parseEuro($shipIn));
+        if ($shipCents === -1 || ($shipCents !== null && $shipCents > 1000000)) {
+            return ['error' => 'Der Versandpreis ist ungültig. Bitte eine Zahl bis 10.000 eingeben, z. B. 49 oder 49,50.'];
         }
         $year = preg_replace('/\D/', '', Http::post('jahr', 4));
 
@@ -333,7 +335,7 @@ final class AtelierController
             'format' => Works::formatFromSize($size),
             'beschreibung' => trim(Http::post('beschreibung', 4000)),
             'preis_cent' => $cents,
-            'versand_cent' => $shipRaw !== '' ? (int) round((float) $shipRaw * 100) : null,
+            'versand_cent' => $shipCents,
             'sichtbar' => Http::post('sichtbar') === 'nein' ? 0 : 1,
             'position' => (int) (preg_replace('/\D/', '', Http::post('position', 5)) ?: 9999),
             'bild_breite' => ($bw = (int) preg_replace('/\D/', '', Http::post('w', 5))) ?: null,
@@ -358,7 +360,7 @@ final class AtelierController
             } else {
                 $prev = Db::one('SELECT status, masse, format, thumb, reserviert_session, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
                 if (!$prev) {
-                    return ['error' => 'Das Werk gibt es nicht mehr.'];
+                    return ['error' => 'Das Werk gibt es nicht mehr.', 'gone' => true];
                 }
                 // Werte, die das Formular nicht zeigt, nur ändern, wenn sich ihre Grundlage ändert:
                 // Formatklasse (Versandpreis) nur bei geänderten Maßen, Vorschaubild nur bei neuem Hauptfoto.
@@ -558,8 +560,9 @@ final class AtelierController
             $name = mb_strtolower(trim(Http::post('benutzer', 60)));
             // Viele Fehlversuche für diesen Benutzernamen (verteilt über viele IPs): bremsen, aber nicht sperren –
             // sonst könnte jeder den echten Zugang aussperren. Mit richtigem Passwort UND Code klappt es immer.
+            // (keine Pause per sleep(): sie würde PHP-Prozesse blockieren; das Passwort-Hashing bremst ohnehin)
             if (RateLimit::attempts('login-user', $name, $win) >= $cfg['limits']['loginFailsPerIp'] * 2) {
-                sleep(2);
+                Log::warn('Atelier: viele Fehlversuche für einen Benutzernamen');
             }
             $code = trim(Http::post('code', 10)) !== '' ? Http::post('code', 10) : Http::post('notfallcode', 20);
             $user = AtelierAuth::attempt($name, Http::post('passwort', 500), $code);
@@ -574,7 +577,6 @@ final class AtelierController
                 Http::redirect('/atelier');
             }
             RateLimit::hit('login-user', $name, PHP_INT_MAX, $win); // Fehlversuch je Benutzer zählen
-            usleep(800000);
             // bewusst ohne Hinweis, welcher der drei Werte falsch war
             self::loginPage('Anmeldung fehlgeschlagen. Bitte Benutzername, Passwort und Code prüfen.');
         }
@@ -621,6 +623,9 @@ final class AtelierController
             }
             if ($path === '/atelier/speichern' && $method === 'POST') {
                 $r = self::save();
+                if (isset($r['gone'])) {
+                    Http::redirect('/atelier?ok=nicht-mehr-da'); // sonst würde der Entwurf als neues Werk erscheinen
+                }
                 if (isset($r['error'])) {
                     $id = (int) Http::post('id', 12);
                     $prev = $id ? Catalog::byIdForAtelier($id) : null;

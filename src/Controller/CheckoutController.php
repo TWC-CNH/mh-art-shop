@@ -251,6 +251,14 @@ final class CheckoutController
 
         $obj = $event->data->object;
         $werkId = (int) ($obj->metadata['werk_id'] ?? 0);
+        if (!$werkId && str_starts_with($event->type, 'checkout.session.')) {
+            // Sitzungen ohne werk_id (z. B. aus einer früheren Shop-Fassung mit product_id): über den slug zuordnen
+            $slug = (string) ($obj->metadata['slug'] ?? '');
+            $werkId = $slug !== '' ? (int) (Db::one('SELECT id FROM werke WHERE slug = ?', [$slug])['id'] ?? 0) : 0;
+            if (!$werkId) {
+                Log::error("Webhook {$event->type} ohne zuordenbares Werk (Sitzung " . ($obj->id ?? '?') . '). Bitte im Stripe-Dashboard prüfen.');
+            }
+        }
         $sid = (string) ($obj->id ?? '');
         try {
             switch ($event->type) {

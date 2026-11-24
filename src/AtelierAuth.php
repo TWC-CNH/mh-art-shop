@@ -45,7 +45,7 @@ final class AtelierAuth
             return null;
         }
         // Notfall-Code (Format XXXXX-XXXXX) statt App-Code: einmalig gültig
-        if (preg_match('/^[A-Za-z0-9]{5}-?[A-Za-z0-9]{5}$/', trim($code))) {
+        if (preg_match('/^[A-Za-z0-9]{5}[\s-]?[A-Za-z0-9]{5}$/', trim($code))) {
             return self::useRecoveryCode($u, $code);
         }
         try {
@@ -229,10 +229,9 @@ final class AtelierAuth
             return false;
         }
         Db::run('UPDATE atelier_benutzer SET aktiv = ? WHERE benutzer = ?', [$active ? 1 : 0, mb_strtolower(trim($name))]);
-        $n = 1;
         if (!$active) {
             Db::run('DELETE s FROM atelier_sessions s JOIN atelier_benutzer b ON b.id = s.benutzer_id WHERE b.benutzer = ?', [mb_strtolower(trim($name))]);
         }
-        return $n === 1;
+        return true;
     }
 }
