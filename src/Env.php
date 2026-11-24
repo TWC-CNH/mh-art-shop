@@ -22,16 +22,21 @@ final class Env
             return;
         }
         foreach (file($path, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
-            if (!preg_match('/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/', $line, $m)) {
+            if (!preg_match('/^\s*([A-Z0-9_]+)\s*=(.*)$/', $line, $m)) {
                 continue;
             }
-            $v = $m[2];
+            $raw = rtrim($m[2]);
+            // „KEY=   # Erklärung“ (Leerzeichen vor #) ist ein leerer Wert mit Kommentar;
+            // „KEY=#abc“ (# direkt nach =) ist ein Wert, z. B. ein Passwort, das mit # beginnt
+            if (preg_match('/^\s+#/', $raw)) {
+                self::$file[$m[1]] = '';
+                continue;
+            }
+            $v = trim($raw);
             if (strlen($v) >= 2 && ($v[0] === '"' || $v[0] === "'") && substr($v, -1) === $v[0]) {
                 $v = substr($v, 1, -1);
             } elseif (preg_match('/^(["\'])(.*?)\1\s+#/', $v, $q)) {
                 $v = $q[2]; // in Anführungszeichen, dahinter ein Kommentar
-            } elseif (str_starts_with($v, '#')) {
-                $v = ''; // „KEY=     # Erklärung“: leerer Wert mit Kommentar
             } else {
                 // Kommentar hinter dem Wert („KEY=wert   # Erklärung“) gehört nicht dazu.
                 // Ein # direkt im Wert (ohne Leerzeichen davor) bleibt erhalten; sonst Wert in Anführungszeichen setzen.

@@ -128,6 +128,10 @@ final class CheckoutController
             self::reply($back('vergeben'), 'vergeben', 409);
         }
 
+        // Schon über der Grenze? Dann gar nicht erst reservieren (sonst wäre das Werk für einen Moment blockiert)
+        if (RateLimit::attempts('checkout', RateLimit::clientIp(), $cfg['reserveMinutes'] * 60) >= $cfg['limits']['checkoutPerIp']) {
+            self::reply($back('zuviele'), 'zuviele', 429);
+        }
         $seconds = $cfg['reserveMinutes'] * 60 + 30;
         $token = Catalog::claim($work['id'], $seconds + 60);
         if ($token === null) {

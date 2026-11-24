@@ -253,7 +253,8 @@ final class AtelierController
         if ($t === '') {
             return null;
         }
-        if (!is_numeric($t) || (float) $t <= 0 || (float) $t >= 1e7) {
+        // Stripe Checkout erlaubt höchstens 999.999,99 € je Position
+        if (!is_numeric($t) || (float) $t <= 0 || (float) $t >= 1e6) {
             return -1;
         }
         return (int) round((float) $t * 100);
@@ -324,7 +325,7 @@ final class AtelierController
         }
         $cents = self::parseEuro(Http::post('preis', 20));
         if ($cents === -1) {
-            return ['error' => 'Der Preis ist ungültig. Bitte nur eine Zahl eingeben, z. B. 2400.'];
+            return ['error' => 'Der Preis ist ungültig. Bitte nur eine Zahl bis 999.999 eingeben, z. B. 2400.'];
         }
         $shipIn = trim(Http::post('versand', 20));
         $shipCents = $shipIn === '' ? null : (preg_match('/^0+([.,]0*)?\s*€?$/u', $shipIn) ? 0 : self::parseEuro($shipIn));
@@ -398,7 +399,8 @@ final class AtelierController
                         if ((int) ($e->errorInfo[1] ?? 0) !== 1062 || $try >= 5) {
                             throw $e;
                         }
-                        $data['slug'] = Catalog::uniqueSlug($data['titel']);
+                        // uniqueSlug() sieht innerhalb der Transaktion (REPEATABLE READ) nur den alten Stand: zufällige Endung anhängen
+                        $data['slug'] = substr(Works::slugify($data['titel']), 0, 120) . '-' . bin2hex(random_bytes(2));
                     }
                 }
                 $id = Db::lastId();

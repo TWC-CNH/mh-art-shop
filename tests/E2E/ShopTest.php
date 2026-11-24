@@ -365,6 +365,7 @@ final class ShopTest extends TestCase
         $err = $c->post('/atelier/speichern', ['preis' => 'abc'] + $edit);
         $this->assertSame(422, $err->status);
         $this->assertStringContainsString('Preis ist ungültig', $err->body);
+        $this->assertStringContainsString('Preis ist ungültig', $c->post('/atelier/speichern', ['preis' => '1.500.000'] + $edit)->body, 'über der Stripe-Grenze');
         $this->assertStringContainsString('name="preis" inputmode="decimal" value="abc"', $err->body);
 
         // fehlendes oder falsches CSRF-Token, fremde Herkunft
