@@ -54,6 +54,7 @@ final class AtelierController
             'gespeichert' => 'Gespeichert. Der Shop zeigt die Änderung sofort.',
             'inzwischen-verkauft' => 'Gespeichert. Achtung: Das Werk wurde inzwischen verkauft und bleibt „Verkauft“.',
             'entfernt' => 'Werk aus dem Shop entfernt.',
+            'bezahlvorgang-laeuft' => 'Gespeichert. Ein laufender Bezahlvorgang ließ sich gerade nicht beenden; das Werk bleibt bis zu dessen Ablauf reserviert. Bitte später prüfen.',
             'bezahlvorgang-beendet' => 'Gespeichert. Ein laufender Bezahlvorgang für dieses Werk wurde beendet, weil sich Preis, Versand oder Sichtbarkeit geändert haben.',
             'nicht-mehr-da' => 'Das Werk wurde inzwischen aus dem Shop entfernt. Die Änderungen wurden nicht gespeichert.',
             'notfall' => "Mit Notfall-Code angemeldet. Noch $n Notfall-Code(s) übrig. Bitte die Authenticator-App neu einrichten lassen (bin/atelier-user.php 2fa).",
@@ -333,6 +334,14 @@ final class AtelierController
         $images = json_decode(Http::post('bilder', 20000), true);
         $images = is_array($images) ? array_values(array_filter($images, fn ($x) => is_array($x) && is_string($x['url'] ?? null) && self::validImagePath($x['url']))) : [];
         $images = array_slice($images, 0, self::MAX_IMAGES);
+        foreach ($images as $x) {
+            $file = str_starts_with($x['url'], '/bilder/')
+                ? Config::get()['uploadDir'] . '/' . basename($x['url'])
+                : dirname(__DIR__, 2) . '/public' . $x['url'];
+            if (!is_file($file)) {
+                return ['error' => 'Ein Foto ist nicht mehr vorhanden (vermutlich zu lange nicht gespeichert). Bitte entfernen und neu hochladen.'];
+            }
+        }
         $main = $images[0] ?? null;
         $uv = null;
         foreach (array_slice($images, 1) as $x) {
@@ -369,7 +378,8 @@ final class AtelierController
         ];
 
         $expire = null;
-        $r = Db::transaction(function () use ($id, $data, $status, $statusChanged, $main, $uv, $rest, &$expire) {
+        $releaseAfterExpire = false;
+        $r = Db::transaction(function () use ($id, $data, $status, $statusChanged, $main, $uv, $rest, &$expire, &$releaseAfterExpire) {
             if ($id === 0) {
                 $data['slug'] = Catalog::uniqueSlug($data['titel']);
                 $data['status'] = $status;
@@ -432,8 +442,14 @@ final class AtelierController
                     || $int($prev['preis_cent']) !== $int($data['preis_cent'])
                     || $shipping($int($prev['versand_cent']), $prev['format'] ?: Works::formatFromSize((string) $prev['masse'])) !== $shipping($int($data['versand_cent']), $data['format']);
                 if ($expire === null && $runningSession !== null && $changedTerms) {
-                    Db::run('UPDATE werke SET reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND reserviert_session = ?', [$id, $runningSession]);
-                    $expire = str_starts_with($runningSession, 'cs_') ? $runningSession : null;
+                    if (str_starts_with($runningSession, 'cs_')) {
+                        // fertige Stripe-Sitzung: erst bei Stripe schließen, dann freigeben (nach der Transaktion)
+                        $expire = $runningSession;
+                        $releaseAfterExpire = true;
+                    } else {
+                        // entstehende Sitzung (pending_…): Reservierung aufheben, der Checkout schließt seine Sitzung selbst
+                        Db::run('UPDATE werke SET reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND reserviert_session = ?', [$id, $runningSession]);
+                    }
                     $msg = 'bezahlvorgang-beendet';
                 }
             }
@@ -452,8 +468,14 @@ final class AtelierController
             try {
                 CheckoutController::stripe()?->checkout->sessions->expire($expire);
                 Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$expire]);
+                if ($releaseAfterExpire) {
+                    Catalog::release((int) $r['id'], $expire);
+                }
             } catch (\Throwable $e) {
                 Log::warn('Offene Stripe-Sitzung nicht geschlossen: ' . $e->getMessage());
+                if ($releaseAfterExpire && isset($r['msg'])) {
+                    $r['msg'] = 'bezahlvorgang-laeuft'; // Reservierung bleibt, bis die Sitzung abläuft
+                }
             }
         }
         return $r;

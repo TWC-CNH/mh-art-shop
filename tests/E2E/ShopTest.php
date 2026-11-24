@@ -795,17 +795,19 @@ final class ShopTest extends TestCase
         // fertiges Ereignis: Duplikat
         $this->assertTrue(Stack::webhook('checkout.session.completed', ['id' => 'cs_x', 'metadata' => []], eventId: 'evt_haengt')->json()['duplicate'] ?? false);
 
-        // Abbruch gibt frei, auch wenn das Schließen bei Stripe scheitert
+        // Schließen bei Stripe scheitert und die Sitzung ist noch offen: Reservierung bleibt (17. Review), kein „wieder frei“-Hinweis
         $buyer = new Client('198.51.100.250');
         self::buy($b, $buyer);
         $sid = self::werk($b)['reserviert_session'];
         $stripeCfg(['fail_expire' => true]);
         try {
-            $buyer->get("/api/cancel?session_id=$sid&slug=$b");
+            $loc = (string) $buyer->get("/api/cancel?session_id=$sid&slug=$b")->header('location');
         } finally {
             $stripeCfg(['fail_expire' => false]);
         }
-        $this->assertNull(self::werk($b)['reserviert_session']);
+        $this->assertSame($sid, self::werk($b)['reserviert_session']);
+        $this->assertStringEndsWith("/werk/$b", $loc);
+        \App\Catalog::release((int) self::werk($b)['id'], $sid); // für die folgenden Tests freigeben
 
         // Position 0 bleibt ganz vorn
         [$c, $csrf] = self::login('192.0.2.140');
@@ -892,7 +894,7 @@ final class ShopTest extends TestCase
         $orphan = 'aaaaaaaa-0000-0000-0000-' . bin2hex(random_bytes(6));
         $kept = 'bbbbbbbb-0000-0000-0000-' . bin2hex(random_bytes(6));
         foreach (["$orphan.jpg", "$orphan-sm.webp", "$kept.jpg"] as $f) {
-            touch("$dir/$f", time() - 2 * 86400);
+            touch("$dir/$f", time() - 8 * 86400);
         }
         Db::run("INSERT INTO werk_bilder (werk_id, pfad, rolle) VALUES (?, '/bilder/$kept.jpg', 'detail')", [self::werk($slug)['id']]);
         Db::run("DELETE FROM merker WHERE name = 'cron_taeglich'");
@@ -975,6 +977,41 @@ final class ShopTest extends TestCase
 
         // Gutschein über den vollen Betrag: Danke-Seite meldet „bestätigt“
         $this->assertStringContainsString('Die Zahlung ist bestätigt.', \App\View\Render::thanks(['status' => 'complete', 'payment_status' => 'no_payment_required', 'metadata' => []], null, false));
+    }
+
+    /** Siebzehntes Review von PR #1 */
+    public function testSiebzehntesReview(): void
+    {
+        $free = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 2"), 'slug');
+        [$a, $b] = $free;
+        $stripeCfg = fn (array $c) => file_get_contents('http://127.0.0.1:' . Stack::STRIPE_PORT . '/__test/config', false, stream_context_create(['http' => ['method' => 'POST', 'header' => 'Content-Type: application/json', 'content' => json_encode($c)]]));
+
+        // Eigener Kauf schon bezahlt (Webhook noch unterwegs), erneuter Klick: Danke-Seite statt „vergeben“
+        $buyer = new Client('198.51.100.150');
+        self::buy($a, $buyer);
+        $sid = self::werk($a)['reserviert_session'];
+        Stack::updateStripeSession($sid, ['status' => 'complete', 'payment_status' => 'paid']);
+        $again = self::buy($a, $buyer);
+        $this->assertSame(200, $again->status);
+        $this->assertStringEndsWith('/danke?session_id=' . $sid, $again->json()['url'] ?? '');
+
+        // Atelier: Preis ändern, Schließen bei Stripe scheitert → Reservierung bleibt, ehrlicher Hinweis
+        [$c, $csrf] = self::login('192.0.2.180');
+        self::buy($b);
+        $w = self::werk($b);
+        $stripeCfg(['fail_expire' => true]);
+        try {
+            $r = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $w['id'], 'titel' => $w['titel'], 'masse' => $w['masse'], 'preis' => (string) ($w['preis_cent'] / 100 + 5), 'status' => 'available', 'status_geladen' => 'reserved', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        } finally {
+            $stripeCfg(['fail_expire' => false]);
+        }
+        $this->assertStringEndsWith('?ok=bezahlvorgang-laeuft', (string) $r->header('location'));
+        $this->assertSame($w['reserviert_session'], self::werk($b)['reserviert_session']);
+
+        // Foto, das nicht (mehr) existiert, wird beim Speichern gemeldet statt kaputt verlinkt
+        $missing = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => '', 'titel' => 'Ohne Datei', 'masse' => '30 x 30 cm', 'status' => 'available', 'sichtbar' => 'ja', 'bilder' => json_encode([['url' => '/bilder/cccccccc-0000-0000-0000-000000000000.jpg', 'role' => 'haupt']])]);
+        $this->assertSame(422, $missing->status);
+        $this->assertStringContainsString('nicht mehr vorhanden', $missing->body);
     }
 
     public function testWiderrufWirdVerschluesseltGespeichert(): void

@@ -41,7 +41,8 @@ try {
         $a = Db::run('DELETE FROM anfragen WHERE eingang < (UTC_TIMESTAMP() - INTERVAL ? MONTH)', [$r['inquiryMonths']]);
         $w = Db::run('DELETE FROM widerrufe WHERE eingang < (UTC_TIMESTAMP() - INTERVAL ? YEAR)', [$r['withdrawalYears']]);
         $e = Db::run('DELETE FROM webhook_events WHERE verarbeitet < (UTC_TIMESTAMP() - INTERVAL 90 DAY)');
-        // Hochgeladene Fotos, die keinem Werk (mehr) gehören und älter als ein Tag sind, entfernen
+        // Hochgeladene Fotos, die keinem Werk (mehr) gehören und älter als 7 Tage sind, entfernen
+        // (großzügig, damit ein offenes, noch nicht gespeichertes Atelier-Formular seine Fotos nicht verliert)
         $used = [];
         foreach (Db::all("SELECT pfad AS p FROM werk_bilder WHERE pfad LIKE '/bilder/%' UNION SELECT thumb FROM werke WHERE thumb LIKE '/bilder/%'") as $r) {
             if (preg_match('#^/bilder/([0-9a-f-]{36})#', (string) $r['p'], $m)) {
@@ -50,7 +51,7 @@ try {
         }
         $orphans = 0;
         foreach (glob(Config::get()['uploadDir'] . '/*') ?: [] as $f) {
-            if (preg_match('#/([0-9a-f-]{36})(-sm|-xs)?\.(jpg|webp)$#', str_replace('\\', '/', $f), $m) && !isset($used[$m[1]]) && filemtime($f) < time() - 86400) {
+            if (preg_match('#/([0-9a-f-]{36})(-sm|-xs)?\.(jpg|webp)$#', str_replace('\\', '/', $f), $m) && !isset($used[$m[1]]) && filemtime($f) < time() - 7 * 86400) {
                 @unlink($f) && $orphans++;
             }
         }

@@ -107,6 +107,9 @@ final class CheckoutController
                 if ($open->status === 'open' && $open->url) {
                     self::reply($open->url);
                 }
+                if ($open->status === 'complete') {
+                    self::reply($cfg['siteUrl'] . '/danke?session_id=' . rawurlencode((string) $row['reserviert_session']));
+                }
                 if ($open->status === 'expired') {
                     // eigene Sitzung ist bei Stripe abgelaufen (Webhook noch unterwegs): Reservierung freigeben, neu kaufen
                     Catalog::release((int) $row['id'], (string) $row['reserviert_session']);
@@ -267,19 +270,21 @@ final class CheckoutController
                 $session = $s->checkout->sessions->retrieve($id);
                 if ($session->status === 'open') {
                     try {
-                        $s->checkout->sessions->expire($id);
+                        $session = $s->checkout->sessions->expire($id);
                     } catch (\Throwable $e) {
                         Log::warn('Abbruch: Sitzung bei Stripe nicht geschlossen: ' . $e->getMessage());
-                        // Vielleicht wurde gerade doch bezahlt (anderer Tab): Status neu lesen, dann nur bei „nicht abgeschlossen“ freigeben
+                        // Status neu lesen: vielleicht wurde gerade bezahlt, oder die Sitzung ist doch schon zu
                         try {
                             $session = $s->checkout->sessions->retrieve($id);
                         } catch (\Throwable) {
-                            // Status unbekannt: trotzdem freigeben, der Käufer hat abgebrochen; ein Verkauf kommt per Webhook
+                            $session = null; // Status unbekannt: nicht freigeben
                         }
                     }
                 }
+                // Nur freigeben, wenn die Sitzung sicher nicht mehr bezahlt werden kann. Ist sie noch offen (z. B. in einem
+                // zweiten Tab) oder unbekannt, bleibt die Reservierung bis zum Ablauf bzw. bis zum Webhook „expired“.
                 $werkId = (int) ($session->metadata['werk_id'] ?? 0);
-                if ($session->status !== 'complete' && $werkId) {
+                if ($session && in_array($session->status, ['expired'], true) && $werkId) {
                     $released = Catalog::release($werkId, $id);
                     Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$id]);
                 }
