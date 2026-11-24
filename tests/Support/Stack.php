@@ -40,8 +40,9 @@ final class Stack
         self::$tmp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mhart-test-' . getmypid();
         @mkdir(self::$tmp . '/bilder', 0777, true);
         copy(self::root() . '/public/bilder/.htaccess', self::$tmp . '/bilder/.htaccess');
-        return self::$env = [
+        self::$env = [
             'APP_ENV' => 'test',
+            'MH_ENV_FILE' => 'none', // Server und Skripte im Test lesen keine lokale .env
             'SITE_URL' => self::base(),
             'DB_HOST' => Env::get('TEST_DB_HOST', Env::get('DB_HOST', '127.0.0.1')),
             'DB_PORT' => Env::get('TEST_DB_PORT', Env::get('DB_PORT', '3306')),
@@ -64,6 +65,8 @@ final class Stack
             'GOOGLE_TAG_ID' => '', 'GOOGLE_ADS_CONVERSION' => '',
             'ALLOW_PROMOTION_CODES' => '', 'SHOW_SOLD' => 'true', 'KLEINUNTERNEHMER' => 'true',
         ];
+        Env::load(''); // lokale .env nach dem Lesen der DB-Zugangsdaten verwerfen: nur die Testwerte gelten
+        return self::$env;
     }
 
     /** Die Testumgebung auch im Testprozess setzen (für direkte Aufrufe von Klassen und Skripten). */

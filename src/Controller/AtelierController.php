@@ -81,7 +81,7 @@ final class AtelierController
     <form method="post" action="/atelier/login" class="at-form">
       <label class="field"><span>Benutzername</span><input name="benutzer" required autocomplete="username" autocapitalize="none" spellcheck="false" autofocus></label>
       <label class="field"><span>Passwort</span><input type="password" name="passwort" required autocomplete="current-password"></label>
-      <label class="field"><span>Code aus der Authenticator-App</span><input name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" aria-describedby="code-hint"><small id="code-hint">6 Ziffern, wechselt alle 30 Sekunden</small></label>
+      <label class="field"><span>Code aus der Authenticator-App</span><input name="code" inputmode="numeric" pattern="[0-9 ]{6,7}|[A-Za-z0-9]{5}[ \-]?[A-Za-z0-9]{5}" maxlength="11" autocomplete="one-time-code" aria-describedby="code-hint"><small id="code-hint">6 Ziffern, wechselt alle 30 Sekunden</small></label>
       <details class="at-recovery"><summary>Handy nicht zur Hand? Notfall-Code verwenden</summary>
         <label class="field"><span>Notfall-Code</span><input name="notfallcode" maxlength="11" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX" aria-describedby="recovery-hint"><small id="recovery-hint">Jeder Notfall-Code gilt nur einmal.</small></label>
       </details>

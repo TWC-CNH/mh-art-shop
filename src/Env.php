@@ -46,11 +46,18 @@ final class Env
         }
     }
 
+    /** Pfad der .env; MH_ENV_FILE=none schaltet das Laden ab (Tests sollen nicht von der lokalen .env abhängen). */
+    private static function defaultPath(): string
+    {
+        $p = getenv('MH_ENV_FILE');
+        return $p === 'none' ? '' : ($p ?: dirname(__DIR__) . '/.env');
+    }
+
     /** Ist der Schlüssel überhaupt gesetzt (auch leer)? */
     public static function has(string $key): bool
     {
         if (!self::$loaded) {
-            self::load(dirname(__DIR__) . '/.env');
+            self::load(self::defaultPath());
         }
         return getenv($key) !== false || array_key_exists($key, self::$file);
     }
@@ -58,10 +65,11 @@ final class Env
     public static function get(string $key, string $default = ''): string
     {
         if (!self::$loaded) {
-            self::load(dirname(__DIR__) . '/.env');
+            self::load(self::defaultPath());
         }
         $real = getenv($key);
-        $v = $real !== false ? $real : (self::$file[$key] ?? null);
+        // Leere Umgebungsvariable (z. B. vom Hosting exportiert) verdeckt nicht den Wert aus der .env
+        $v = $real !== false && $real !== '' ? $real : (self::$file[$key] ?? ($real !== false ? $real : null));
         return $v === null || $v === '' ? $default : (string) $v;
     }
 }

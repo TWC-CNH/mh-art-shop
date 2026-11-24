@@ -114,8 +114,21 @@ final class Crypto
         }
         $secret = $base !== null
             ? hash_hkdf('sha256', $base, 32, 'mh-pseudonym')
-            : ($c['stripeSecretKey'] ?: 'mh-local-dev');
+            : ($c['stripeSecretKey'] ?: ($c['db']['pass'] !== '' ? hash('sha256', 'mh-pseudonym|' . $c['db']['pass'] . '|' . $c['db']['name']) : self::devSecret()));
         return hash_hmac('sha256', $purpose . '|' . mb_strtolower($value, 'UTF-8'), $secret);
+    }
+
+    /** Fester Ersatz nur in Test/Entwicklung; im Betrieb ohne jedes Geheimnis wird laut protokolliert. */
+    private static function devSecret(): string
+    {
+        if (!in_array(Config::get()['env'], ['test', 'local'], true)) {
+            static $warned = false;
+            if (!$warned) {
+                Log::error('Kein DATA_ENCRYPTION_KEY, kein Stripe-Schlüssel, kein DB-Passwort: IP-Hashes sind nicht geheim. Bitte DATA_ENCRYPTION_KEY setzen.');
+                $warned = true;
+            }
+        }
+        return 'mh-local-dev';
     }
 
     /** Wie pseudonym(), aber mit dem alten Schlüssel (DATA_ENCRYPTION_KEY_OLD) – für Links von vor einem Schlüsselwechsel. */

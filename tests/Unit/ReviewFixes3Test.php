@@ -37,6 +37,7 @@ final class ReviewFixes3Test extends TestCase
             '# KOMMENTIERT=1',
             'T_LEER_MIT_KOMMENTAR=     # nur falls nötig',
             'T_PASS_RAUTE_ANFANG=#Xk9!pq',
+            'T_LEER_EXPORTIERT=aus-der-datei',
             'LEER=',
         ]));
         try {
@@ -49,10 +50,13 @@ final class ReviewFixes3Test extends TestCase
             $this->assertSame('', Env::get('KOMMENTIERT'));
             $this->assertSame('', Env::get('T_LEER_MIT_KOMMENTAR'), 'leerer Wert mit Kommentar');
             $this->assertSame('#Xk9!pq', Env::get('T_PASS_RAUTE_ANFANG'), '# direkt nach = gehört zum Wert');
+            putenv('T_LEER_EXPORTIERT=');
+            $this->assertSame('aus-der-datei', Env::get('T_LEER_EXPORTIERT'), 'leere Umgebungsvariable verdeckt die .env nicht');
+            putenv('T_LEER_EXPORTIERT');
             $this->assertSame('x', Env::get('LEER', 'x'));
         } finally {
             unlink($f);
-            Env::load(Stack::root() . '/.env');
+            Env::load(''); // wie in der Testumgebung: keine lokale .env
         }
     }
 

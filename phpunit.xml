@@ -5,6 +5,10 @@
          cacheDirectory=".phpunit.cache"
          executionOrder="default"
          colors="true">
+  <php>
+    <!-- Tests lesen keine lokale .env (nur Stack liest daraus die DB-Zugangsdaten) -->
+    <env name="MH_ENV_FILE" value="none" force="true"/>
+  </php>
   <testsuites>
     <testsuite name="Unit">
       <directory>tests/Unit</directory>

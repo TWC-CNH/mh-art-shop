@@ -62,7 +62,7 @@ final class ShopController
         if (!$own) {
             // Bestätigung ja (das Werk gehört Ihnen), aber Name, E-Mail, Betrag und Conversion nur im eigenen Browser
             // Zahlungsstatus ist keine persönliche Angabe: bleibt, damit „bezahlt“ bzw. „wird verarbeitet“ stimmt
-            $session = ['status' => 'complete', 'payment_status' => $session['payment_status'] ?? null, 'metadata' => $session['metadata'] ?? []];
+            $session = ['status' => 'complete', 'payment_status' => $session['payment_status'] ?? null, 'shipping_cost' => ['amount_total' => $session['shipping_cost']['amount_total'] ?? null], 'metadata' => $session['metadata'] ?? []];
         }
         Http::html(Render::thanks($session, $work, $own));
     }
