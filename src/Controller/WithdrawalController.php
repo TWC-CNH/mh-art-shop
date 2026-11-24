@@ -169,7 +169,9 @@ HTML,
             }
         }
 
-        $owner = !$perIp['ok'] && $stored ? ['sent' => false, 'reason' => 'Limit je IP (steht im Atelier)'] : Mailer::send(
+        // Eigener Zähler für die Meldung an Matthias: so kann niemand sein Postfach fluten, auch nicht mit immer derselben Adresse
+        $ownerOk = RateLimit::hit('widerruf-meldung', $ip, $cfg['limits']['withdrawPerIp'], 3600)['ok'];
+        $owner = !$ownerOk && $stored ? ['sent' => false, 'reason' => 'Limit je IP (steht im Atelier)'] : Mailer::send(
             $cfg['contactEmail'],
             "Widerruf eingegangen: {$rec['contract']}",
             "Über den Shop ist ein Widerruf eingegangen.\n\nName: {$rec['name']}\nKauf: {$rec['contract']}\nE-Mail: {$rec['email']}\nEingang: {$rec['receivedLabel']}\nVorgang: {$rec['ref']}\n\n"

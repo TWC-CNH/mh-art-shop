@@ -212,8 +212,8 @@ final class AtelierAuth
         if (!preg_match('/^[a-z0-9._-]{3,60}$/', $name)) {
             throw new \InvalidArgumentException('Benutzername: 3–60 Zeichen, nur a–z, 0–9, Punkt, Bindestrich, Unterstrich.');
         }
-        if (mb_strlen($password) < 12) {
-            throw new \InvalidArgumentException('Passwort: mindestens 12 Zeichen.');
+        if (mb_strlen($password) < 12 || mb_strlen($password) > 500) {
+            throw new \InvalidArgumentException('Passwort: 12 bis 500 Zeichen (das Anmeldeformular nimmt höchstens 500 an).');
         }
         $hash = self::hashPassword($password);
         $existing = Db::one('SELECT id, totp_enc FROM atelier_benutzer WHERE benutzer = ?', [$name]);

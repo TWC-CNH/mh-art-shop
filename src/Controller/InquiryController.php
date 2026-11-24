@@ -26,9 +26,15 @@ final class InquiryController
         }
         // Ohne JavaScript: einfache Bestätigungsseite
         $cfg = Config::get();
+        // Bei Eingabefehlern den konkreten Grund nennen und zurück zum (vom Browser meist noch gefüllten) Formular führen
+        $reason = match (true) {
+            $error === 'zuviele' => 'Von Ihrem Anschluss kamen gerade sehr viele Anfragen.',
+            $error === '', $error === 'fehler' => 'Das hat leider nicht geklappt.',
+            default => $error,
+        };
         $msg = $ok
             ? 'Vielen Dank, Ihre Anfrage ist angekommen. Ich antworte in der Regel innerhalb eines Tages.'
-            : 'Das hat leider nicht geklappt. Bitte schreiben Sie direkt an ' . e($cfg['contactEmail']) . '.';
+            : e($reason) . ($status === 422 ? ' Gehen Sie im Browser einen Schritt zurück, Ihre Eingaben sind dort meist noch vorhanden.' : '') . ' Oder schreiben Sie direkt an ' . e($cfg['contactEmail']) . '.';
         Http::html(\App\View\Render::layout([
             'title' => 'Anfrage',
             'canonical' => '/anfrage',

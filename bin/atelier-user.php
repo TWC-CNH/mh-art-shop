@@ -41,7 +41,7 @@ $askPassword = function () use ($generate): string {
     if (DIRECTORY_SEPARATOR === '/') {
         system('stty -echo');
     }
-    $pw = trim((string) fgets(STDIN));
+    $pw = rtrim((string) fgets(STDIN), "\r\n"); // nur das Zeilenende entfernen – Leerzeichen gehören zum Passwort
     if (DIRECTORY_SEPARATOR === '/') {
         system('stty echo');
         echo "\n";

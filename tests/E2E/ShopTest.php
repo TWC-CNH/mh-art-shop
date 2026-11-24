@@ -1094,6 +1094,29 @@ final class ShopTest extends TestCase
         Db::run('UPDATE werke SET aktiv = 1 WHERE id = ?', [$w2['id']]);
     }
 
+    /** Sechsundzwanzigstes Review von PR #1 */
+    public function testSechsundzwanzigstesReview(): void
+    {
+        // Immer dieselbe Adresse von einer IP: Matthias bekommt höchstens 5 Meldungen pro Stunde
+        $c = new Client('198.51.100.170');
+        for ($i = 0; $i < 8; $i++) {
+            $c->post('/vertrag-widerrufen', ['name' => 'Gleich', 'vertrag' => 'X', 'email' => 'gleich@example.test']);
+        }
+        $toOwner = array_filter(Stack::mails(), fn ($m) => $m['replyTo'] === 'gleich@example.test');
+        $this->assertCount(5, $toOwner);
+
+        // Anfrage ohne JavaScript, Einwilligung fehlt: konkrete Meldung
+        $r = (new Client('198.51.100.171'))->post('/anfrage', ['name' => 'A', 'email' => 'a@example.test', 'nachricht' => 'x']);
+        $this->assertSame(422, $r->status);
+        $this->assertStringContainsString('Einwilligung', $r->body);
+        $this->assertStringContainsString('Schritt zurück', $r->body);
+
+        // Passwort über 500 Zeichen lässt sich nicht setzen (Anmeldung nimmt höchstens 500)
+        Stack::applyToProcess();
+        $this->expectException(\InvalidArgumentException::class);
+        \App\AtelierAuth::saveUser('zu-lang', str_repeat('x', 501));
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');
