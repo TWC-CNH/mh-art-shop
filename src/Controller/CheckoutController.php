@@ -101,16 +101,27 @@ final class CheckoutController
             self::reply($back('vergeben'), 'vergeben', 409);
         }
 
+        $session = null;
         try {
             $session = $s->checkout->sessions->create(self::sessionParams($work, $cfg, time() + $seconds));
-            Catalog::attachSession($work['id'], $token, $session->id, (int) $session->expires_at);
             Db::run('INSERT INTO bestellungen (stripe_session_id, werk_id, betrag_cent) VALUES (?, ?, ?)', [$session->id, $work['id'], $work['priceCents']]);
-            self::reply($session->url, '', 303, $session->id);
+            Catalog::attachSession($work['id'], $token, $session->id, (int) $session->expires_at);
         } catch (\Throwable $e) {
-            Catalog::release($work['id'], $token);
             Log::error('Checkout-Fehler: ' . $e->getMessage());
+            // Aufräumen: Reservierung freigeben (Token oder schon zugeordnete Sitzung) und eine bereits
+            // angelegte Stripe-Sitzung schließen, damit sie nicht ohne Bestellung bezahlt werden kann.
+            Catalog::release($work['id'], $token);
+            if ($session) {
+                Catalog::release($work['id'], $session->id);
+                try {
+                    $s->checkout->sessions->expire($session->id);
+                } catch (\Throwable $e2) {
+                    Log::error('Stripe-Sitzung konnte nicht geschlossen werden: ' . $e2->getMessage());
+                }
+            }
             self::reply($back('fehler'), 'fehler', 500);
         }
+        self::reply($session->url, '', 303, $session->id);
     }
 
     private static function sessionParams(array $work, array $cfg, int $expiresAt): array

@@ -309,7 +309,7 @@ final class AtelierController
             'position' => (int) (preg_replace('/\D/', '', Http::post('position', 5)) ?: 9999),
             'bild_breite' => ($bw = (int) preg_replace('/\D/', '', Http::post('w', 5))) ?: null,
             'bild_hoehe' => ($bh = (int) preg_replace('/\D/', '', Http::post('h', 5))) ?: null,
-            'thumb' => $main && preg_match('#^/bilder/[a-z0-9-]+\.jpg$#', $main['url']) ? preg_replace('/\.jpg$/', '-sm.jpg', $main['url']) : null,
+            'thumb' => $main ? self::thumbFor($main['url']) : null,
             'auszeichnungen' => json_encode(self::lines(Http::post('auszeichnungen')), JSON_UNESCAPED_UNICODE),
             'ausstellungen' => json_encode(self::lines(Http::post('ausstellungen')), JSON_UNESCAPED_UNICODE),
         ];
@@ -323,9 +323,18 @@ final class AtelierController
                 $id = Db::lastId();
                 $msg = 'Werk angelegt. Es erscheint sofort im Shop.';
             } else {
-                $prev = Db::one('SELECT status FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
+                $prev = Db::one('SELECT status, masse, format, thumb FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
                 if (!$prev) {
                     return ['error' => 'Das Werk gibt es nicht mehr.'];
+                }
+                // Werte, die das Formular nicht zeigt, nur ändern, wenn sich ihre Grundlage ändert:
+                // Formatklasse (Versandpreis) nur bei geänderten Maßen, Vorschaubild nur bei neuem Hauptfoto.
+                if ($data['masse'] === $prev['masse'] && $prev['format'] !== null) {
+                    $data['format'] = $prev['format'];
+                }
+                $prevMain = Db::one('SELECT pfad FROM werk_bilder WHERE werk_id = ? AND rolle = \'haupt\' ORDER BY reihenfolge LIMIT 1', [$id]);
+                if ($main && $prevMain && $prevMain['pfad'] === $main['url'] && $prev['thumb'] !== null) {
+                    $data['thumb'] = $prev['thumb'];
                 }
                 $set = implode(', ', array_map(fn ($c) => "$c = ?", array_keys($data)));
                 Db::run("UPDATE werke SET $set WHERE id = ?", [...array_values($data), $id]);
@@ -347,6 +356,18 @@ final class AtelierController
             }
             return ['id' => $id, 'msg' => $msg];
         });
+    }
+
+    /** Vorschaubild zum Hauptfoto: die mittlere Größe (-sm), sofern es sie gibt; sonst das Hauptfoto selbst (NULL). */
+    private static function thumbFor(string $url): ?string
+    {
+        if (preg_match('#^/bilder/[a-z0-9-]+\.jpg$#', $url)) {
+            return preg_replace('/\.jpg$/', '-sm.jpg', $url);
+        }
+        if (preg_match('#^/img/works/([A-Za-z0-9._-]+)\.jpg$#', $url, $m) && is_file(dirname(__DIR__, 2) . "/public/img/works/{$m[1]}-sm.jpg")) {
+            return "/img/works/{$m[1]}-sm.jpg";
+        }
+        return null;
     }
 
     // ---------- Foto-Upload (vom Browser bereits verkleinert) ----------
@@ -464,7 +485,9 @@ final class AtelierController
             // Sperre nach zu vielen Fehlversuchen je IP (gilt auch für das richtige Passwort)
             $ip = RateLimit::clientIp();
             $win = $cfg['limits']['loginWindowMin'] * 60;
-            if (RateLimit::attempts('login', $ip, $win) >= $cfg['limits']['loginFailsPerIp']) {
+            // Jeder Versuch belegt vor der Passwortprüfung einen Platz (atomar), damit auch viele
+            // gleichzeitige Anfragen nicht mehr als das Limit an Versuchen bekommen. Erfolg setzt zurück.
+            if (!RateLimit::hit('login', $ip, $cfg['limits']['loginFailsPerIp'], $win)['ok']) {
                 self::loginPage("Zu viele Fehlversuche. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
             }
             if (AtelierAuth::checkPassword(Http::post('passwort', 500))) {
@@ -472,7 +495,6 @@ final class AtelierController
                 AtelierAuth::login();
                 Http::redirect('/atelier');
             }
-            RateLimit::hit('login', $ip, PHP_INT_MAX, $win);
             usleep(800000);
             self::loginPage('Das Passwort stimmt nicht.');
         }

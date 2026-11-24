@@ -143,10 +143,14 @@ HTML,
             ? Mailer::send($rec['email'], "Eingangsbestätigung Ihres Widerrufs ({$rec['ref']})", self::mailText($rec, $cfg), $cfg['contactEmail'])
             : ['sent' => false, 'reason' => 'Limit je Empfänger erreicht'];
         if ($stored) {
-            Db::run('UPDATE widerrufe SET mail_versendet = ? WHERE ref = ?', [$mail['sent'] ? 1 : 0, $rec['ref']]);
+            try {
+                Db::run('UPDATE widerrufe SET mail_versendet = ? WHERE ref = ?', [$mail['sent'] ? 1 : 0, $rec['ref']]);
+            } catch (\Throwable $e) {
+                Log::error('Widerruf: Mail-Vermerk nicht gespeichert: ' . $e->getMessage());
+            }
         }
 
-        Mailer::send(
+        $owner = Mailer::send(
             $cfg['contactEmail'],
             "Widerruf eingegangen: {$rec['contract']}",
             "Über den Shop ist ein Widerruf eingegangen.\n\nName: {$rec['name']}\nKauf: {$rec['contract']}\nE-Mail: {$rec['email']}\nEingang: {$rec['receivedLabel']}\nVorgang: {$rec['ref']}\n\n"
@@ -155,7 +159,13 @@ HTML,
             . "\nNächste Schritte: Rückgabe abstimmen, nach Erhalt in Stripe erstatten und das Werk im Atelier wieder auf „Verfügbar“ stellen.",
             $rec['email']
         );
-        Log::info("Widerruf eingegangen {$rec['ref']}, Mail: " . ($mail['sent'] ? 'ja' : 'nein'));
+        Log::info("Widerruf {$rec['ref']}: gespeichert " . ($stored ? 'ja' : 'nein') . ', Bestätigung ' . ($mail['sent'] ? 'ja' : 'nein') . ', Meldung ' . ($owner['sent'] ? 'ja' : 'nein'));
+
+        // Nirgends angekommen (weder gespeichert noch per Mail): dem Käufer ehrlich sagen und den Weg per E-Mail nennen,
+        // statt eine Eingangsbestätigung anzuzeigen, für die es keinen Nachweis gibt.
+        if (!$stored && !$mail['sent'] && !$owner['sent']) {
+            Http::html(self::formPage($values, "Ihr Widerruf konnte gerade technisch nicht entgegengenommen werden. Bitte senden Sie ihn per E-Mail an {$cfg['contactEmail']} (Name, betroffener Kauf) oder versuchen Sie es in einigen Minuten erneut."), 503);
+        }
         Http::html(self::donePage($rec, $mail['sent']));
     }
 }

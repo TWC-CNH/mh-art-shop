@@ -6,7 +6,7 @@ namespace App;
 /**
  * Anmeldung im Atelier: ein Passwort (nur sein Argon2id-Hash steht in ATELIER_PASSWORD_HASH).
  * Nach der Anmeldung bekommt das Gerät ein zufälliges Token als Cookie; in der Datenbank steht nur dessen Hash.
- * Abmelden löscht den Eintrag serverseitig. Formulare tragen ein CSRF-Token, das vom Sitzungstoken abgeleitet ist.
+ * Abmelden löscht den Eintrag serverseitig; ein neues Passwort meldet alle Geräte ab. Formulare tragen ein CSRF-Token, das vom Sitzungstoken abgeleitet ist.
  */
 final class AtelierAuth
 {
@@ -26,10 +26,19 @@ final class AtelierAuth
         return $hash !== '' && password_verify($pw, $hash);
     }
 
+    /**
+     * Hash des Sitzungstokens, gebunden an den aktuellen Passwort-Hash: Wird ATELIER_PASSWORD_HASH geändert
+     * (z. B. nach einem Verdacht auf ein bekannt gewordenes Passwort), sind alle bestehenden Anmeldungen ungültig.
+     */
+    private static function tokenHash(string $token): string
+    {
+        return hash_hmac('sha256', $token, Config::get()['atelierPasswordHash']);
+    }
+
     public static function login(): void
     {
         $token = bin2hex(random_bytes(32));
-        Db::run('INSERT INTO atelier_sessions (token_hash, laeuft_ab) VALUES (?, ?)', [hash('sha256', $token), Db::now(self::DAYS * 86400)]);
+        Db::run('INSERT INTO atelier_sessions (token_hash, laeuft_ab) VALUES (?, ?)', [self::tokenHash($token), Db::now(self::DAYS * 86400)]);
         Http::setCookie(self::COOKIE, $token, self::DAYS * 86400, '/atelier', 'Strict');
         self::$token = $token;
     }
@@ -38,7 +47,7 @@ final class AtelierAuth
     {
         $t = Http::cookie(self::COOKIE);
         if ($t !== '') {
-            Db::run('DELETE FROM atelier_sessions WHERE token_hash = ?', [hash('sha256', $t)]);
+            Db::run('DELETE FROM atelier_sessions WHERE token_hash = ?', [self::tokenHash($t)]);
         }
         Http::setCookie(self::COOKIE, '', -1, '/atelier', 'Strict');
     }
@@ -52,7 +61,7 @@ final class AtelierAuth
         if (!preg_match('/^[0-9a-f]{64}$/', $t)) {
             return false;
         }
-        $ok = (bool) Db::one('SELECT 1 FROM atelier_sessions WHERE token_hash = ? AND laeuft_ab > UTC_TIMESTAMP()', [hash('sha256', $t)]);
+        $ok = (bool) Db::one('SELECT 1 FROM atelier_sessions WHERE token_hash = ? AND laeuft_ab > UTC_TIMESTAMP()', [self::tokenHash($t)]);
         if ($ok) {
             self::$token = $t;
         }

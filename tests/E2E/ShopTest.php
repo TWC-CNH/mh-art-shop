@@ -305,6 +305,20 @@ final class ShopTest extends TestCase
         $this->assertSame(0, (int) self::werk('morgenrot-2')['aktiv']);
         $this->assertSame(404, (new Client())->get('/werk/morgenrot-2')->status);
 
+        // importiertes Werk: nur den Preis ändern – Formatklasse (Versand) und Vorschaubild bleiben
+        $nacht = self::werk('nacht');
+        $bild = Db::one("SELECT pfad FROM werk_bilder WHERE werk_id = ? AND rolle = 'haupt'", [$nacht['id']])['pfad'];
+        Db::run("UPDATE werke SET format = 'klein' WHERE id = ?", [$nacht['id']]); // bewusst abweichend von den Maßen
+        $imgs = array_map(fn ($b) => ['url' => $b['pfad'], 'role' => $b['rolle']], Db::all('SELECT pfad, rolle FROM werk_bilder WHERE werk_id = ? ORDER BY reihenfolge', [$nacht['id']]));
+        $r = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $nacht['id'], 'titel' => $nacht['titel'], 'masse' => $nacht['masse'], 'technik' => $nacht['technik'], 'preis' => '1234', 'status' => 'available', 'sichtbar' => 'ja', 'bilder' => json_encode($imgs)]);
+        $this->assertSame(303, $r->status);
+        $after = self::werk('nacht');
+        $this->assertSame(123400, (int) $after['preis_cent']);
+        $this->assertSame('klein', $after['format']);
+        $this->assertSame($nacht['thumb'], $after['thumb']);
+        $this->assertNotNull($after['thumb']);
+        $this->assertStringStartsWith('/img/works/', $bild);
+
         // abmelden: Sitzung ist serverseitig ungültig
         $token = $c->cookie('mh_atelier');
         $c->post('/atelier/logout', ['csrf' => $csrf]);

@@ -57,13 +57,20 @@ final class RateLimit
     public static function hit(string $bucket, string $id, int $limit, int $windowSec): array
     {
         try {
+            // Atomar auch bei vielen gleichzeitigen Anfragen: erst eintragen, dann zählen, wie viele Einträge
+            // im Fenster bis einschließlich des eigenen (nach ID) existieren. Liegt der eigene Eintrag jenseits
+            // des Limits, wird er wieder entfernt und abgelehnt. So kommen höchstens $limit Anfragen durch.
             $k = self::key($bucket, $id);
-            $rows = Db::all('SELECT zeitpunkt FROM rate_limits WHERE bucket = ? AND schluessel = ? AND zeitpunkt > ? ORDER BY zeitpunkt', [$bucket, $k, self::since($windowSec)]);
-            if (count($rows) >= $limit) {
-                $first = strtotime($rows[0]['zeitpunkt'] . ' UTC');
-                return ['ok' => false, 'retryAfter' => max(1, $first + $windowSec - time())];
-            }
+            $since = self::since($windowSec);
             Db::run('INSERT INTO rate_limits (bucket, schluessel, zeitpunkt) VALUES (?, ?, UTC_TIMESTAMP(3))', [$bucket, $k]);
+            $mine = Db::lastId();
+            $pos = (int) Db::one('SELECT COUNT(*) AS n FROM rate_limits WHERE bucket = ? AND schluessel = ? AND zeitpunkt > ? AND id <= ?', [$bucket, $k, $since, $mine])['n'];
+            if ($pos > $limit) {
+                Db::run('DELETE FROM rate_limits WHERE id = ?', [$mine]);
+                $first = Db::one('SELECT MIN(zeitpunkt) AS t FROM rate_limits WHERE bucket = ? AND schluessel = ? AND zeitpunkt > ?', [$bucket, $k, $since]);
+                $t = $first['t'] ? strtotime($first['t'] . ' UTC') : time();
+                return ['ok' => false, 'retryAfter' => max(1, $t + $windowSec - time())];
+            }
             return ['ok' => true, 'retryAfter' => 0];
         } catch (\Throwable $e) {
             Log::warn('Rate-Limit nicht speicherbar: ' . $e->getMessage());

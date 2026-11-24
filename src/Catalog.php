@@ -158,12 +158,23 @@ final class Catalog
         });
     }
 
-    /** Zahlung gescheitert: wieder verfügbar, sofern nicht durch eine andere Sitzung verkauft. */
+    /**
+     * Zahlung gescheitert: wieder verfügbar – aber nur, wenn genau diese Sitzung das Werk verkauft hat.
+     * Von Hand im Atelier gesetzte Verkäufe und fremde Reservierungen bleiben unberührt.
+     */
     public static function markAvailable(int $id, string $sessionId): bool
     {
+        // Gab es eine zweite Zahlung für das Werk, bleibt es verkauft – jetzt an diese zweite Sitzung.
+        if (Db::run(
+            'UPDATE werke SET verkauft_session = doppelverkauf_session, doppelverkauf_session = NULL
+             WHERE id = ? AND status = \'sold\' AND verkauft_session = ? AND doppelverkauf_session IS NOT NULL',
+            [$id, $sessionId]
+        ) === 1) {
+            return false;
+        }
         return Db::run(
-            'UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL, reserviert_bis = NULL, reserviert_session = NULL
-             WHERE id = ? AND (verkauft_session IS NULL OR verkauft_session = ?)',
+            'UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL
+             WHERE id = ? AND status = \'sold\' AND verkauft_session = ?',
             [$id, $sessionId]
         ) === 1;
     }
