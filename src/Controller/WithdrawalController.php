@@ -90,6 +90,9 @@ HTML,
     {
         $cfg = Config::get();
         if (Http::method() === 'GET') {
+            if (Http::query('ref') !== '') {
+                self::showReceipt(Http::query('ref'), Http::query('t'));
+            }
             Http::html(self::formPage());
         }
         if (Http::method() !== 'POST') {
@@ -170,6 +173,35 @@ HTML,
         if (!$stored && !$mail['sent'] && !$owner['sent']) {
             Http::html(self::formPage($values, "Ihr Widerruf konnte gerade technisch nicht entgegengenommen werden. Bitte senden Sie ihn per E-Mail an {$cfg['contactEmail']} (Name, betroffener Kauf) oder versuchen Sie es in einigen Minuten erneut."), 503);
         }
+        if ($stored) {
+            // Nach dem Absenden weiterleiten: Neuladen oder „Zurück/Vor“ schicken den Widerruf nicht erneut ab
+            Http::redirect('/vertrag-widerrufen?ref=' . rawurlencode($rec['ref']) . '&t=' . self::receiptToken($rec['ref']));
+        }
         Http::html(self::donePage($rec, $mail['sent']));
+    }
+
+    /** Geheimer Prüfwert für den Link zur Eingangsbestätigung (nur wer abgeschickt hat, kennt ihn). */
+    private static function receiptToken(string $ref): string
+    {
+        return substr(Crypto::pseudonym($ref, 'widerruf-beleg'), 0, 32);
+    }
+
+    /** Eingangsbestätigung anzeigen (bis 24 Stunden nach Eingang, nur mit gültigem Prüfwert). */
+    private static function showReceipt(string $ref, string $token): never
+    {
+        $row = preg_match('/^W-\d{8}-[0-9A-F]{6}$/', $ref) && hash_equals(self::receiptToken($ref), $token)
+            ? Db::one('SELECT * FROM widerrufe WHERE ref = ? AND eingang > UTC_TIMESTAMP() - INTERVAL 1 DAY', [$ref])
+            : null;
+        if (!$row) {
+            Http::redirect('/vertrag-widerrufen');
+        }
+        try {
+            $rec = Crypto::decrypt($row['daten_enc'], 'widerrufe/' . $ref);
+        } catch (\Throwable $e) {
+            Log::error('Widerrufsbeleg nicht lesbar: ' . $e->getMessage());
+            Http::redirect('/vertrag-widerrufen');
+        }
+        header('X-Robots-Tag: noindex');
+        Http::html(self::donePage($rec, (bool) (int) $row['mail_versendet']));
     }
 }

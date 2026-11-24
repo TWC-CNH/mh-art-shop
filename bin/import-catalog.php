@@ -45,8 +45,8 @@ foreach ($data as $d) {
             unset($fields['status']);
             if ((int) $prev['reserviert']) {
                 // Läuft gerade ein Bezahlvorgang, Preis und Versand nicht ändern (er liefe sonst zum alten Preis weiter)
-                unset($fields['preis_cent'], $fields['versand_cent']);
-                echo "  Hinweis: {$w['slug']} ist gerade reserviert – Preis/Versand nicht geändert, später erneut ausführen.\n";
+                unset($fields['preis_cent'], $fields['versand_cent'], $fields['masse'], $fields['format']); // auch Maße: sie bestimmen den Versand
+                echo "  Hinweis: {$w['slug']} ist gerade reserviert – Preis, Versand und Maße nicht geändert, später erneut ausführen.\n";
             }
             Db::run('UPDATE werke SET ' . implode(', ', array_map(fn ($c) => "$c = ?", array_keys($fields))) . ' WHERE id = ?', [...array_values($fields), $id]);
             Db::run('DELETE FROM werk_bilder WHERE werk_id = ?', [$id]);

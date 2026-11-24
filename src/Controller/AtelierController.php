@@ -253,6 +253,18 @@ final class AtelierController
         return (int) round((float) $t * 100);
     }
 
+    /** PHP-Größenangabe wie „8M“ in Bytes. */
+    private static function iniBytes(string $v): int
+    {
+        $n = (int) $v;
+        return match (strtoupper(substr(trim($v), -1))) {
+            'G' => $n * 1024 ** 3,
+            'M' => $n * 1024 ** 2,
+            'K' => $n * 1024,
+            default => $n,
+        } ?: PHP_INT_MAX;
+    }
+
     /** Position aus dem Formular; leer = ans Ende (9999), 0 ist eine gültige Position ganz vorn. */
     private static function position(): int
     {
@@ -410,9 +422,11 @@ final class AtelierController
                 // Auch eine gerade entstehende Sitzung (pending_…) zählt: ihre Reservierung wird aufgehoben,
                 // dann merkt der Checkout das und schließt die neue Stripe-Sitzung selbst.
                 $runningSession = (int) $prev['reserviert'] && preg_match('/^(cs_|pending_)/', (string) $prev['reserviert_session']) ? $prev['reserviert_session'] : null;
+                // tatsächlicher Versandpreis: eigener Preis oder aus der Formatklasse (die an den Maßen hängt)
+                $shipping = fn ($cents, $format) => $cents !== null ? (int) $cents : (int) round(Works::shippingFor(['shippingEur' => null, 'format' => $format ?: 'mittel']) * 100);
                 $changedTerms = ((int) $prev['sichtbar'] === 1 && $data['sichtbar'] === 0)
                     || $int($prev['preis_cent']) !== $int($data['preis_cent'])
-                    || $int($prev['versand_cent']) !== $int($data['versand_cent']);
+                    || $shipping($int($prev['versand_cent']), $prev['format'] ?: Works::formatFromSize((string) $prev['masse'])) !== $shipping($int($data['versand_cent']), $data['format']);
                 if ($expire === null && $runningSession !== null && $changedTerms) {
                     Db::run('UPDATE werke SET reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND reserviert_session = ?', [$id, $runningSession]);
                     $expire = str_starts_with($runningSession, 'cs_') ? $runningSession : null;
@@ -643,6 +657,10 @@ final class AtelierController
                 exit('Bitte anmelden');
             }
             self::loginPage();
+        }
+        // Übersteigt eine Anfrage post_max_size, verwirft PHP den ganzen Inhalt (auch das CSRF-Token): klar melden
+        if ($path === '/atelier/upload' && $method === 'POST' && !$_POST && !$_FILES && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > self::iniBytes((string) ini_get('post_max_size'))) {
+            Http::jsonOut(['error' => 'Foto zu groß für den Server (Grenze ' . ini_get('post_max_size') . ')'], 413);
         }
         if ($method === 'POST' && (!Http::sameOrigin() || !AtelierAuth::checkCsrf(Http::post('csrf', 100)))) {
             http_response_code(403);

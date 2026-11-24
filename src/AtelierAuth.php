@@ -54,12 +54,21 @@ final class AtelierAuth
             Log::error('2FA-Geheimnis nicht lesbar für Benutzer ' . $u['id'] . ': ' . $e->getMessage());
             return null;
         }
-        $step = Totp::verify($secret, $code, $u['totp_letzter_schritt'] !== null ? (int) $u['totp_letzter_schritt'] : null);
+        // Zuletzt benutzte Zeitschritte: jeder Code gilt genau einmal. (Nicht „alles bis zum letzten Schritt“ sperren –
+        // sonst würde eine leicht vorgehende Handy-Uhr den nächsten korrekten Code eines zweiten Geräts aussperren.)
+        $before = $u['totp_genutzt'];
+        $usedSteps = array_map('intval', array_filter(explode(',', (string) $before), 'strlen'));
+        $step = Totp::verify($secret, $code, null, null, $usedSteps);
         if ($step === null) {
             return null;
         }
-        // Zeitschritt atomar verbrauchen: derselbe Code funktioniert kein zweites Mal
-        $used = Db::run('UPDATE atelier_benutzer SET totp_letzter_schritt = ?, letzter_login = UTC_TIMESTAMP() WHERE id = ? AND (totp_letzter_schritt IS NULL OR totp_letzter_schritt < ?)', [$step, $u['id'], $step]);
+        $now = Totp::currentStep();
+        $keep = array_values(array_filter([...$usedSteps, $step], fn ($s) => $s >= $now - 2));
+        // Atomar verbrauchen: nur wenn niemand sonst seit dem Lesen einen Code benutzt hat
+        $used = Db::run(
+            'UPDATE atelier_benutzer SET totp_genutzt = ?, totp_letzter_schritt = ?, letzter_login = UTC_TIMESTAMP() WHERE id = ? AND totp_genutzt <=> ?',
+            [implode(',', $keep), $step, $u['id'], $before]
+        );
         return $used === 1 ? $u : null;
     }
 
@@ -218,7 +227,7 @@ final class AtelierAuth
             throw new \InvalidArgumentException("Benutzer $name gibt es nicht.");
         }
         $secret = Totp::newSecret();
-        Db::run('UPDATE atelier_benutzer SET totp_enc = ?, totp_letzter_schritt = NULL WHERE id = ?', [Crypto::encrypt(['secret' => $secret], 'atelier_benutzer/totp/' . $u['id']), $u['id']]);
+        Db::run('UPDATE atelier_benutzer SET totp_enc = ?, totp_letzter_schritt = NULL, totp_genutzt = NULL WHERE id = ?', [Crypto::encrypt(['secret' => $secret], 'atelier_benutzer/totp/' . $u['id']), $u['id']]);
         Db::run('DELETE FROM atelier_sessions WHERE benutzer_id = ?', [$u['id']]);
         return $secret;
     }

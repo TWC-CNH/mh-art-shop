@@ -43,6 +43,17 @@ final class ReviewFixes7Test extends TestCase
         }
     }
 
+    /** Elftes Review: vorgehende Handy-Uhr sperrt den nächsten korrekten Code nicht aus, Wiederholung bleibt gesperrt. */
+    public function testZweiFaktorJederSchrittGenauEinmal(): void
+    {
+        [$name, $secret] = Stack::createUser();
+        $now = \App\Totp::currentStep();
+        $this->assertNotNull(\App\AtelierAuth::attempt($name, Stack::PASSWORD, \App\Totp::code($secret, $now + 1)), 'Handy 30 s vor');
+        $this->assertNotNull(\App\AtelierAuth::attempt($name, Stack::PASSWORD, \App\Totp::code($secret, $now)), 'zweites Gerät, richtige Uhr');
+        $this->assertNull(\App\AtelierAuth::attempt($name, Stack::PASSWORD, \App\Totp::code($secret, $now)), 'derselbe Code nochmal');
+        $this->assertNull(\App\AtelierAuth::attempt($name, Stack::PASSWORD, \App\Totp::code($secret, $now + 1)), 'der vorgehende Code nochmal');
+    }
+
     public function testKontingentPlatzLaesstSichZuruecknehmen(): void
     {
         $a = RateLimit::hit('test-undo', 'x@example.test', 2, 600);

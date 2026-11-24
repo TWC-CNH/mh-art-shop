@@ -800,6 +800,27 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('höchstens 45 Minuten', (new Client())->get('/datenschutz')->body);
     }
 
+    /** Elftes Review von PR #1 */
+    public function testElftesReview(): void
+    {
+        [$c, $csrf] = self::login('192.0.2.150');
+
+        // Geänderte Maße (andere Versandklasse) beenden einen laufenden Bezahlvorgang
+        $slug = Db::one("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 AND versand_cent IS NULL AND masse LIKE '%x%' ORDER BY id LIMIT 1")['slug'];
+        self::buy($slug);
+        $w = self::werk($slug);
+        $r = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $w['id'], 'titel' => $w['titel'], 'masse' => '150 x 120 cm', 'preis' => (string) ($w['preis_cent'] / 100), 'status' => 'available', 'status_geladen' => 'reserved', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertStringEndsWith('?ok=bezahlvorgang-beendet', (string) $r->header('location'));
+        $this->assertSame('expired', Stack::stripeSessions()[$w['reserviert_session']]['status']);
+
+        // Zu großer Upload: verständliche Meldung statt „Forbidden“
+        $big = Stack::$tmp . '/zu-gross.bin';
+        file_put_contents($big, "\xFF\xD8" . random_bytes(3 * 1024 * 1024));
+        $up = $c->post('/atelier/upload', ['full' => new \CURLFile($big), 'sm' => new \CURLFile($big), 'xs' => new \CURLFile($big), 'csrf' => $csrf]);
+        $this->assertSame(413, $up->status);
+        $this->assertStringContainsString('Foto zu groß', $up->json()['error'] ?? '');
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');
@@ -809,8 +830,17 @@ final class ShopTest extends TestCase
         $this->assertSame(422, $c->post('/vertrag-widerrufen', ['name' => 'Erika Muster', 'vertrag' => 'NACHT', 'email' => 'kaputt'])->status);
         $this->assertSame(403, $c->post('/vertrag-widerrufen', ['name' => 'x'], ['Origin: https://boese.example'])->status);
 
-        $r = $c->post('/vertrag-widerrufen', ['name' => 'Erika Muster', 'vertrag' => 'Werk „NACHT“, gekauft am 20.11.2026', 'email' => 'Erika@Example.test']);
+        $post = $c->post('/vertrag-widerrufen', ['name' => 'Erika Muster', 'vertrag' => 'Werk „NACHT“, gekauft am 20.11.2026', 'email' => 'Erika@Example.test']);
+        // Weiterleitung auf die Bestätigung (Neuladen schickt nichts doppelt)
+        $this->assertSame(303, $post->status);
+        $receipt = (string) $post->header('location');
+        $this->assertMatchesRegularExpression('#^/vertrag-widerrufen\?ref=W-\d{8}-[0-9A-F]{6}&t=[0-9a-f]{32}$#', $receipt);
+        $r = $c->get($receipt);
         $this->assertSame(200, $r->status);
+        $count = (int) Db::one('SELECT COUNT(*) AS n FROM widerrufe')['n'];
+        $this->assertSame(200, $c->get($receipt)->status, 'Neuladen');
+        $this->assertSame($count, (int) Db::one('SELECT COUNT(*) AS n FROM widerrufe')['n'], 'kein zweiter Eintrag');
+        $this->assertStringNotContainsString('Erika', (new Client())->get(preg_replace('/t=[0-9a-f]+/', 't=' . str_repeat('0', 32), $receipt))->body, 'falscher Prüfwert zeigt nichts');
         $this->assertStringContainsString('Ihr Widerruf ist eingegangen', $r->body);
         $this->assertMatchesRegularExpression('/\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}:\d{2} Uhr/', $r->body);
         $this->assertMatchesRegularExpression('/W-\d{8}-[0-9A-F]{6}/', $r->body);
@@ -883,7 +913,7 @@ final class ShopTest extends TestCase
         // Widerruf: höchstens 5 je IP und Stunde
         $w = new Client('203.0.113.30');
         for ($i = 0; $i < 5; $i++) {
-            $this->assertSame(200, $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => "opfer$i@example.test"])->status);
+            $this->assertSame(303, $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => "opfer$i@example.test"])->status);
         }
         $blocked = $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => 'opfer9@example.test']);
         $this->assertSame(429, $blocked->status);

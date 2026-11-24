@@ -69,7 +69,7 @@ final class Totp
      * Prüft einen Code (±1 Zeitfenster für Uhrabweichung). Liefert den verwendeten Zeitschritt
      * oder null. Schritte bis einschließlich $lastStep werden abgelehnt (kein zweites Benutzen desselben Codes).
      */
-    public static function verify(string $secretB32, string $code, ?int $lastStep = null, ?int $time = null): ?int
+    public static function verify(string $secretB32, string $code, ?int $lastStep = null, ?int $time = null, array $usedSteps = []): ?int
     {
         $code = preg_replace('/\s+/', '', $code) ?? '';
         if (!preg_match('/^\d{' . self::DIGITS . '}$/', $code)) {
@@ -78,7 +78,7 @@ final class Totp
         $now = self::currentStep($time);
         foreach ([0, -1, 1] as $d) {
             $step = $now + $d;
-            if ($lastStep !== null && $step <= $lastStep) {
+            if (($lastStep !== null && $step <= $lastStep) || in_array($step, $usedSteps, true)) {
                 continue;
             }
             if (hash_equals(self::code($secretB32, $step), $code)) {

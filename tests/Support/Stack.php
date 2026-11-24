@@ -112,7 +112,7 @@ final class Stack
         $env = getenv() + self::env();
         $null = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
         self::$procs[] = proc_open([PHP_BINARY, '-S', '127.0.0.1:' . self::STRIPE_PORT, self::root() . '/tests/FakeStripe/router.php'], [1 => ['file', $null, 'w'], 2 => ['file', $null, 'w']], $p1, self::root(), $env);
-        self::$procs[] = proc_open([PHP_BINARY, '-S', '127.0.0.1:' . self::SHOP_PORT, '-t', self::root() . '/public', self::root() . '/tests/Support/serve.php'], [1 => ['file', $null, 'w'], 2 => ['file', $null, 'w']], $p2, self::root(), $env);
+        self::$procs[] = proc_open([PHP_BINARY, '-d', 'post_max_size=2M', '-d', 'upload_max_filesize=2M', '-S', '127.0.0.1:' . self::SHOP_PORT, '-t', self::root() . '/public', self::root() . '/tests/Support/serve.php'], [1 => ['file', $null, 'w'], 2 => ['file', $null, 'w']], $p2, self::root(), $env);
         foreach ([self::SHOP_PORT, self::STRIPE_PORT] as $port) {
             for ($i = 0; $i < 50; $i++) {
                 $s = @fsockopen('127.0.0.1', $port, $en, $es, 0.2);
