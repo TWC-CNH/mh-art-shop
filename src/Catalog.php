@@ -33,6 +33,13 @@ final class Catalog
         return (!Config::get()['showSold'] && $w['status'] === 'sold') ? null : $w;
     }
 
+    /** Wie bySlug, aber auch verkaufte Werke bei SHOW_SOLD=false (z. B. für die Danke-Seite). */
+    public static function bySlugIncludingSold(string $slug): ?array
+    {
+        $row = Db::one('SELECT ' . self::COLS . ' FROM werke w WHERE w.slug = ? AND w.aktiv = 1', [$slug]);
+        return $row ? self::withImages([$row])[0] : null;
+    }
+
     /** Für das Atelier: auch ausgeblendete Werke; liefert die Werk-Struktur plus die Rohzeile unter "_row". */
     public static function byIdForAtelier(int $id): ?array
     {
@@ -133,7 +140,9 @@ final class Catalog
         // Zusätzlich: noch sichtbar und der Preis ist derselbe, mit dem die Stripe-Sitzung angelegt wurde
         return Db::run(
             'UPDATE werke SET reserviert_session = ?, reserviert_bis = ? WHERE id = ? AND reserviert_session = ? AND aktiv = 1 AND sichtbar = 1 AND status = \'available\' AND preis_cent = ?',
-            [$sessionId, gmdate('Y-m-d H:i:s', $expiresAt), $id, $token, $priceCents]
+            // 5 Minuten Puffer: eine Zahlung, die Sekunden vor Ablauf begonnen wurde, kann noch durchlaufen.
+            // Läuft die Sitzung regulär ab, gibt das Ereignis checkout.session.expired das Werk sofort frei.
+            [$sessionId, gmdate('Y-m-d H:i:s', $expiresAt + 300), $id, $token, $priceCents]
         ) === 1;
     }
 

@@ -253,6 +253,13 @@ final class AtelierController
         return (int) round((float) $t * 100);
     }
 
+    /** Position aus dem Formular; leer = ans Ende (9999), 0 ist eine gültige Position ganz vorn. */
+    private static function position(): int
+    {
+        $p = (string) preg_replace('/\D/', '', Http::post('position', 5));
+        return $p === '' ? 9999 : (int) $p;
+    }
+
     private static function lines(string $s): array
     {
         return array_values(array_filter(array_map(fn ($x) => mb_substr(trim($x), 0, 200), preg_split('/\r?\n/', $s) ?: []), fn ($x) => $x !== ''));
@@ -279,7 +286,7 @@ final class AtelierController
             'awards' => self::lines(Http::post('auszeichnungen')),
             'exhibitions' => self::lines(Http::post('ausstellungen')),
             'w' => Http::post('w', 5), 'h' => Http::post('h', 5),
-            'sort' => (int) (preg_replace('/\D/', '', Http::post('position', 5)) ?: 9999),
+            'sort' => self::position(),
             '_images' => $imgs,
             '_price' => Http::post('preis', 20),
             '_ship' => Http::post('versand', 20),
@@ -338,7 +345,7 @@ final class AtelierController
             'preis_cent' => $cents,
             'versand_cent' => $shipCents,
             'sichtbar' => Http::post('sichtbar') === 'nein' ? 0 : 1,
-            'position' => (int) (preg_replace('/\D/', '', Http::post('position', 5)) ?: 9999),
+            'position' => self::position(),
             'bild_breite' => ($bw = (int) preg_replace('/\D/', '', Http::post('w', 5))) ?: null,
             'bild_hoehe' => ($bh = (int) preg_replace('/\D/', '', Http::post('h', 5))) ?: null,
             'thumb' => $main ? self::thumbFor($main['url']) : null,

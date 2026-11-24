@@ -753,6 +753,53 @@ final class ShopTest extends TestCase
         }
     }
 
+    /** Zehntes Review von PR #1 */
+    public function testZehntesReview(): void
+    {
+        $free = fn (int $n) => array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT $n"), 'slug');
+        $stripeCfg = fn (array $c) => file_get_contents('http://127.0.0.1:' . Stack::STRIPE_PORT . '/__test/config', false, stream_context_create(['http' => ['method' => 'POST', 'header' => 'Content-Type: application/json', 'content' => json_encode($c)]]));
+        [$a, $b, $d] = $free(3);
+
+        // Reservierung hält 5 Minuten länger als die Stripe-Sitzung
+        self::buy($a);
+        $wa = self::werk($a);
+        $expiresAt = Stack::stripeSessions()[$wa['reserviert_session']]['expires_at'];
+        $this->assertSame(gmdate('Y-m-d H:i:s', $expiresAt + 300), $wa['reserviert_bis']);
+
+        // Webhook-Lauf, der hart abgebrochen ist (fertig = 0, alt): spätere Zustellung übernimmt
+        Db::run("INSERT INTO webhook_events (event_id, typ, fertig, verarbeitet) VALUES ('evt_haengt', 'checkout.session.completed', 0, UTC_TIMESTAMP() - INTERVAL 5 MINUTE)");
+        $r = Stack::webhook('checkout.session.completed', ['id' => $wa['reserviert_session'], 'status' => 'complete', 'payment_status' => 'paid', 'metadata' => ['werk_id' => (string) $wa['id']]], eventId: 'evt_haengt');
+        $this->assertSame(200, $r->status);
+        $this->assertSame('sold', self::werk($a)['status']);
+        $this->assertSame(1, (int) Db::one("SELECT fertig FROM webhook_events WHERE event_id = 'evt_haengt'")['fertig']);
+        // gerade in Arbeit (frisch): andere Zustellung wartet
+        Db::run("INSERT INTO webhook_events (event_id, typ, fertig) VALUES ('evt_laeuft', 'checkout.session.completed', 0)");
+        $this->assertSame(409, Stack::webhook('checkout.session.expired', ['id' => 'cs_x', 'metadata' => []], eventId: 'evt_laeuft')->status);
+        // fertiges Ereignis: Duplikat
+        $this->assertTrue(Stack::webhook('checkout.session.completed', ['id' => 'cs_x', 'metadata' => []], eventId: 'evt_haengt')->json()['duplicate'] ?? false);
+
+        // Abbruch gibt frei, auch wenn das Schließen bei Stripe scheitert
+        $buyer = new Client('198.51.100.250');
+        self::buy($b, $buyer);
+        $sid = self::werk($b)['reserviert_session'];
+        $stripeCfg(['fail_expire' => true]);
+        try {
+            $buyer->get("/api/cancel?session_id=$sid&slug=$b");
+        } finally {
+            $stripeCfg(['fail_expire' => false]);
+        }
+        $this->assertNull(self::werk($b)['reserviert_session']);
+
+        // Position 0 bleibt ganz vorn
+        [$c, $csrf] = self::login('192.0.2.140');
+        $wd = self::werk($d);
+        $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $wd['id'], 'titel' => $wd['titel'], 'masse' => $wd['masse'], 'preis' => (string) ($wd['preis_cent'] / 100), 'status' => 'available', 'status_geladen' => 'available', 'sichtbar' => 'ja', 'position' => '0', 'bilder' => '[]']);
+        $this->assertSame(0, (int) self::werk($d)['position']);
+
+        // Datenschutzerklärung nennt die tatsächliche Cookie-Dauer
+        $this->assertStringContainsString('höchstens 45 Minuten', (new Client())->get('/datenschutz')->body);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

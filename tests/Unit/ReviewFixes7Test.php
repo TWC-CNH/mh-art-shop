@@ -28,6 +28,21 @@ final class ReviewFixes7Test extends TestCase
         $this->assertSame(['status' => 'sold', 'verkauft_session' => 'cs_a', 'doppelverkauf_session' => null], $w);
     }
 
+    /** Zehntes Review: Danke-Seite findet das gerade verkaufte Werk auch bei SHOW_SOLD=false. */
+    public function testVerkauftesWerkFuerDankeSeite(): void
+    {
+        putenv('SHOW_SOLD=false');
+        \App\Config::reset();
+        try {
+            Db::run("UPDATE werke SET status = 'sold' WHERE slug = 'blick'");
+            $this->assertNull(Catalog::bySlug('blick'), 'im Shop ausgeblendet');
+            $this->assertSame('blick', Catalog::bySlugIncludingSold('blick')['slug']);
+        } finally {
+            putenv('SHOW_SOLD=true');
+            \App\Config::reset();
+        }
+    }
+
     public function testKontingentPlatzLaesstSichZuruecknehmen(): void
     {
         $a = RateLimit::hit('test-undo', 'x@example.test', 2, 600);

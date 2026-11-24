@@ -38,7 +38,8 @@ final class ShopController
             try {
                 $session = $s->checkout->sessions->retrieve($id)->toArray();
                 if (!empty($session['metadata']['slug'])) {
-                    $work = Catalog::bySlug((string) $session['metadata']['slug']);
+                    // ohne Filter „verkaufte ausblenden“: das Werk ist ja gerade verkauft worden
+                    $work = Catalog::bySlugIncludingSold((string) $session['metadata']['slug']);
                 }
             } catch (\Throwable $e) {
                 Log::warn('Session nicht gefunden: ' . $e->getMessage());

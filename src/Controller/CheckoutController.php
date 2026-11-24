@@ -226,7 +226,12 @@ final class CheckoutController
             try {
                 $session = $s->checkout->sessions->retrieve($id);
                 if ($session->status === 'open') {
-                    $s->checkout->sessions->expire($id);
+                    try {
+                        $s->checkout->sessions->expire($id);
+                    } catch (\Throwable $e) {
+                        // trotzdem freigeben: der Käufer hat abgebrochen, die Sitzung läuft bei Stripe ohnehin ab
+                        Log::warn('Abbruch: Sitzung bei Stripe nicht geschlossen: ' . $e->getMessage());
+                    }
                 }
                 $werkId = (int) ($session->metadata['werk_id'] ?? 0);
                 if ($session->status !== 'complete' && $werkId) {
@@ -261,9 +266,18 @@ final class CheckoutController
             http_response_code(400);
             exit('Ungültige Signatur');
         }
-        // Zuerst eintragen: Kommen zwei Zustellungen gleichzeitig, verarbeitet nur die erste
-        if (Db::run('INSERT IGNORE INTO webhook_events (event_id, typ) VALUES (?, ?)', [$event->id, $event->type]) === 0) {
-            Http::jsonOut(['received' => true, 'duplicate' => true]);
+        // Ereignis beanspruchen: Kommen zwei Zustellungen gleichzeitig, verarbeitet nur eine. „fertig“ wird erst nach
+        // Erfolg gesetzt – bricht ein Lauf hart ab (Zeit- oder Speichergrenze), übernimmt eine spätere Zustellung.
+        if (Db::run('INSERT IGNORE INTO webhook_events (event_id, typ, fertig) VALUES (?, ?, 0)', [$event->id, $event->type]) === 0) {
+            $row = Db::one('SELECT fertig FROM webhook_events WHERE event_id = ?', [$event->id]);
+            if (!$row || (int) $row['fertig'] === 1) {
+                Http::jsonOut(['received' => true, 'duplicate' => true]);
+            }
+            // in Arbeit: nur übernehmen, wenn der andere Lauf seit über 2 Minuten hängt
+            $taken = Db::run('UPDATE webhook_events SET verarbeitet = UTC_TIMESTAMP() WHERE event_id = ? AND fertig = 0 AND verarbeitet <= UTC_TIMESTAMP() - INTERVAL 2 MINUTE', [$event->id]);
+            if ($taken === 0) {
+                Http::jsonOut(['received' => false, 'busy' => true], 409); // Stripe stellt später erneut zu
+            }
         }
 
         $obj = $event->data->object;
@@ -317,6 +331,7 @@ final class CheckoutController
                     // charge.refunded u. a.: Werk bleibt bewusst verkauft, bis Matthias es im Atelier wieder freigibt.
                     break;
             }
+            Db::run('UPDATE webhook_events SET fertig = 1 WHERE event_id = ?', [$event->id]);
         } catch (\Throwable $e) {
             Log::error("Fehler bei {$event->type}: " . $e->getMessage());
             try {

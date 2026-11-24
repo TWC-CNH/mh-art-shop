@@ -125,7 +125,8 @@ final class Config
             'googleTagId' => $e('GOOGLE_TAG_ID'),
             'googleAdsConversion' => $e('GOOGLE_ADS_CONVERSION'),
 
-            'uploadDir' => $e('UPLOAD_DIR', dirname(__DIR__) . '/public/bilder'),
+            // Fest public/bilder: die Bildadressen /bilder/… hängen daran. UPLOAD_DIR nur für Tests (mit eigenem Router).
+            'uploadDir' => $e('APP_ENV') === 'test' ? $e('UPLOAD_DIR', dirname(__DIR__) . '/public/bilder') : dirname(__DIR__) . '/public/bilder',
         ];
     }
 }
