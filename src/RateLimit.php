@@ -1,0 +1,88 @@
+<?php
+declare(strict_types=1);
+
+namespace App;
+
+/**
+ * Begrenzung von Versuchen je Zweck und Schlüssel (IP-Adresse, E-Mail) in einem Zeitfenster.
+ * Gespeichert werden nur Zeitpunkte unter einem geheimen Hash, nie IP oder E-Mail im Klartext.
+ * Fällt die Datenbank aus, wird nicht blockiert: Kaufen und Widerrufen sollen dann trotzdem gehen.
+ */
+final class RateLimit
+{
+    /**
+     * IP-Adresse des Besuchers: REMOTE_ADDR. Nur wenn die Anfrage von einem eingetragenen Proxy kommt
+     * (TRUSTED_PROXIES, kommagetrennt), wird der erste Eintrag aus X-Forwarded-For genommen.
+     * Ohne diese Prüfung könnte jeder Besucher seine IP im Header frei wählen und die Begrenzung umgehen.
+     */
+    public static function clientIp(): string
+    {
+        $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unbekannt');
+        $trusted = array_filter(array_map('trim', explode(',', Env::get('TRUSTED_PROXIES'))));
+        if ($trusted && in_array($remote, $trusted, true)) {
+            $fwd = trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''))[0]);
+            if (filter_var($fwd, FILTER_VALIDATE_IP)) {
+                return $fwd;
+            }
+        }
+        return $remote;
+    }
+
+    private static function key(string $bucket, string $id): string
+    {
+        return Crypto::pseudonym($id, 'rl|' . $bucket);
+    }
+
+    private static function since(int $windowSec): string
+    {
+        return gmdate('Y-m-d H:i:s', time() - $windowSec);
+    }
+
+    /** Anzahl der Versuche im Fenster, ohne einen neuen zu zählen. */
+    public static function attempts(string $bucket, string $id, int $windowSec): int
+    {
+        try {
+            $r = Db::one('SELECT COUNT(*) AS n FROM rate_limits WHERE bucket = ? AND schluessel = ? AND zeitpunkt > ?', [$bucket, self::key($bucket, $id), self::since($windowSec)]);
+            return (int) ($r['n'] ?? 0);
+        } catch (\Throwable $e) {
+            Log::warn('Rate-Limit nicht lesbar: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Zählt einen Versuch. Ist das Limit im Fenster erreicht, wird nicht gezählt.
+     * @return array{ok: bool, retryAfter: int}
+     */
+    public static function hit(string $bucket, string $id, int $limit, int $windowSec): array
+    {
+        try {
+            $k = self::key($bucket, $id);
+            $rows = Db::all('SELECT zeitpunkt FROM rate_limits WHERE bucket = ? AND schluessel = ? AND zeitpunkt > ? ORDER BY zeitpunkt', [$bucket, $k, self::since($windowSec)]);
+            if (count($rows) >= $limit) {
+                $first = strtotime($rows[0]['zeitpunkt'] . ' UTC');
+                return ['ok' => false, 'retryAfter' => max(1, $first + $windowSec - time())];
+            }
+            Db::run('INSERT INTO rate_limits (bucket, schluessel, zeitpunkt) VALUES (?, ?, UTC_TIMESTAMP(3))', [$bucket, $k]);
+            return ['ok' => true, 'retryAfter' => 0];
+        } catch (\Throwable $e) {
+            Log::warn('Rate-Limit nicht speicherbar: ' . $e->getMessage());
+            return ['ok' => true, 'retryAfter' => 0];
+        }
+    }
+
+    public static function reset(string $bucket, string $id): void
+    {
+        try {
+            Db::run('DELETE FROM rate_limits WHERE bucket = ? AND schluessel = ?', [$bucket, self::key($bucket, $id)]);
+        } catch (\Throwable $e) {
+            Log::warn('Rate-Limit nicht zurücksetzbar: ' . $e->getMessage());
+        }
+    }
+
+    /** Alte Einträge löschen (Cron). Längstes Fenster ist ein Tag. */
+    public static function purge(): int
+    {
+        return Db::run('DELETE FROM rate_limits WHERE zeitpunkt < ?', [self::since(2 * 86400)]);
+    }
+}

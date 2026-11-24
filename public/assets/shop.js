@@ -263,7 +263,7 @@
       btn.disabled = true;
       err.hidden = true;
       try {
-        const res = await fetch('/__forms.html', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(new FormData(form)).toString() });
+        const res = await fetch('/anfrage', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: new URLSearchParams(new FormData(form)).toString(), credentials: 'same-origin' });
         if (!res.ok) throw new Error(res.status);
         form.reset();
         form.hidden = true;
@@ -445,3 +445,6 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
   document.addEventListener('click', (e) => { if (!header.contains(e.target)) set(false); });
 })();
+
+// Drucken-Knopf (z. B. Widerrufsbestätigung), ohne Inline-Skript
+document.querySelectorAll('[data-print]').forEach((b) => b.addEventListener('click', () => window.print()));

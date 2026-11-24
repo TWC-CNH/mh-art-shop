@@ -7,3 +7,9 @@ node_modules/
 .records/
 .idea/
 /#__DATA/
+vendor/
+.phpunit.cache/
+storage/
+public/bilder/*
+!public/bilder/.htaccess
+tests/parity/out/

@@ -1,0 +1,425 @@
+<?php
+declare(strict_types=1);
+
+namespace Tests\E2E;
+
+use App\Db;
+use PHPUnit\Framework\TestCase;
+use Tests\Support\Client;
+use Tests\Support\Stack;
+
+/**
+ * Ende-zu-Ende-Tests gegen den echten PHP-Server, eine Testdatenbank und einen Stripe-Ersatz.
+ * Die Tests bauen in dieser Reihenfolge aufeinander auf (Kauf → Verkauf → …).
+ */
+final class ShopTest extends TestCase
+{
+    private static string $firstUrl = '';
+    private static Client $buyer;
+
+    public static function setUpBeforeClass(): void
+    {
+        Stack::start();
+        Stack::applyToProcess();
+        self::$buyer = new Client('198.51.100.1');
+    }
+
+    private static function werk(string $slug): array
+    {
+        return Db::one('SELECT * FROM werke WHERE slug = ?', [$slug]);
+    }
+
+    private static function buy(string $slug, ?Client $c = null): \Tests\Support\Response
+    {
+        static $n = 10;
+        return ($c ?? new Client('198.51.100.' . ++$n))->postJson('/api/checkout', ['slug' => $slug]);
+    }
+
+    public function testStartseiteZeigtWerkeMitPreisen(): void
+    {
+        $r = (new Client())->get('/');
+        $this->assertSame(200, $r->status);
+        $this->assertMatchesRegularExpression('/3\.400\x{00A0}€/u', $r->body);
+        $this->assertSame(33, substr_count($r->body, '<article class="card'));
+        $this->assertStringContainsString('badge--sold', $r->body); // FREI ist verkauft
+        $this->assertStringContainsString('action="/anfrage"', $r->body);
+    }
+
+    public function testCheckoutReserviertDasWerk(): void
+    {
+        $r = self::buy('cool', self::$buyer);
+        $this->assertSame(200, $r->status, $r->body);
+        self::$firstUrl = $r->json()['url'];
+        $this->assertStringStartsWith('https://checkout.stripe.test', self::$firstUrl);
+        $this->assertNotNull(self::$buyer->cookie('mh_co'));
+
+        $w = self::werk('cool');
+        $this->assertGreaterThan(gmdate('Y-m-d H:i:s', time() + 29 * 60), $w['reserviert_bis']);
+        $s = Stack::stripeSessions()[$w['reserviert_session']];
+        $p = $s['params'];
+        $this->assertSame('1', $p['line_items'][0]['quantity']);
+        $this->assertSame('340000', $p['line_items'][0]['price_data']['unit_amount']); // Preis aus der Datenbank
+        $this->assertSame('DE', $p['shipping_address_collection']['allowed_countries'][0]);
+        $this->assertSame('8900', $p['shipping_options'][0]['shipping_rate_data']['fixed_amount']['amount']); // großes Format
+        $this->assertSame('0', $p['shipping_options'][1]['shipping_rate_data']['fixed_amount']['amount']); // Abholung
+        $this->assertStringContainsString('§ 19 UStG', $p['custom_text']['submit']['message']);
+        $this->assertSame((string) $w['id'], $p['metadata']['werk_id']);
+        $this->assertSame('offen', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$w['reserviert_session']])['status']);
+    }
+
+    public function testZweiterKaeuferBekommtVergeben(): void
+    {
+        $this->assertStringContainsString('Gerade reserviert', (new Client())->get('/werk/cool')->body);
+        $r = self::buy('cool');
+        $this->assertSame(409, $r->status);
+        $this->assertSame('vergeben', $r->json()['error']);
+    }
+
+    public function testDerselbeKaeuferKommtZurueckInSeineSitzung(): void
+    {
+        $this->assertSame(self::$firstUrl, self::buy('cool', self::$buyer)->json()['url']);
+    }
+
+    public function testAbbruchGibtDasWerkFrei(): void
+    {
+        $sid = self::werk('cool')['reserviert_session'];
+        $r = self::$buyer->get("/api/cancel?session_id=$sid&slug=cool");
+        $this->assertSame(303, $r->status);
+        $this->assertStringEndsWith('/werk/cool?abgebrochen=1', $r->header('location'));
+        $this->assertSame('expired', Stack::stripeSessions()[$sid]['status']);
+        $this->assertNull(self::werk('cool')['reserviert_bis']);
+        $this->assertNull(self::$buyer->cookie('mh_co'));
+    }
+
+    public function testFremderAbbruchLinkGibtNichtFrei(): void
+    {
+        self::buy('nacht');
+        $own = self::werk('nacht')['reserviert_session'];
+        self::buy('blick');
+        $other = self::werk('blick')['reserviert_session'];
+        // Abbruch-Link der Sitzung von "blick", aber mit slug=nacht: "nacht" bleibt reserviert
+        (new Client())->get("/api/cancel?session_id=$other&slug=nacht");
+        $this->assertSame($own, self::werk('nacht')['reserviert_session']);
+        $this->assertNull(self::werk('blick')['reserviert_session']);
+    }
+
+    public function testWebhookMitFalscherSignaturWirdAbgelehnt(): void
+    {
+        $r = Stack::webhook('checkout.session.completed', ['id' => 'cs_x', 'metadata' => ['werk_id' => (string) self::werk('cool')['id']]], 'whsec_falsch');
+        $this->assertSame(400, $r->status);
+        $this->assertNotSame('sold', self::werk('cool')['status']);
+    }
+
+    public function testBezahlungMarkiertVerkauftUndIstIdempotent(): void
+    {
+        $this->assertSame(200, self::buy('cool')->status);
+        $sid = self::werk('cool')['reserviert_session'];
+        $session = Stack::stripeSessions()[$sid];
+        unset($session['params']);
+        $obj = ['status' => 'complete', 'payment_status' => 'paid', 'amount_total' => 348900] + $session;
+
+        $r = Stack::webhook('checkout.session.completed', $obj, eventId: 'evt_bezahlt_1');
+        $this->assertSame(200, $r->status, $r->body);
+        $w = self::werk('cool');
+        $this->assertSame('sold', $w['status']);
+        $this->assertSame($sid, $w['verkauft_session']);
+        $this->assertNull($w['reserviert_bis']);
+        $b = Db::one('SELECT * FROM bestellungen WHERE stripe_session_id = ?', [$sid]);
+        $this->assertSame('bezahlt', $b['status']);
+        $this->assertSame(348900, (int) $b['betrag_cent']);
+
+        // gleiches Ereignis noch einmal: wird erkannt, nichts ändert sich
+        $this->assertTrue(Stack::webhook('checkout.session.completed', $obj, eventId: 'evt_bezahlt_1')->json()['duplicate'] ?? false);
+
+        $page = (new Client())->get('/werk/cool');
+        $this->assertStringContainsString('Verkauft', $page->body);
+        $this->assertStringNotContainsString('data-checkout', $page->body);
+        $this->assertSame(409, self::buy('cool')->status);
+
+        // Danke-Seite liest die Sitzung bei Stripe
+        Stack::updateStripeSession($sid, ['status' => 'complete', 'customer_details' => ['name' => 'Erika Muster', 'email' => 'erika@example.test']]);
+        $thanks = (new Client())->get("/danke?session_id=$sid");
+        $this->assertSame(200, $thanks->status);
+        $this->assertStringContainsString('Erika', $thanks->body);
+        $this->assertSame('no-store', $thanks->header('cache-control'));
+    }
+
+    public function testAblaufUndGescheiterteZahlungGebenFrei(): void
+    {
+        self::buy('krieg');
+        $sid = self::werk('krieg')['reserviert_session'];
+        Stack::webhook('checkout.session.expired', ['id' => $sid, 'status' => 'expired', 'metadata' => ['werk_id' => (string) self::werk('krieg')['id']]]);
+        $this->assertNull(self::werk('krieg')['reserviert_session']);
+
+        self::buy('krieg');
+        $sid = self::werk('krieg')['reserviert_session'];
+        $obj = ['id' => $sid, 'status' => 'complete', 'payment_status' => 'unpaid', 'metadata' => ['werk_id' => (string) self::werk('krieg')['id']]];
+        Stack::webhook('checkout.session.completed', $obj); // SEPA: sofort als verkauft markiert
+        $this->assertSame('sold', self::werk('krieg')['status']);
+        Stack::webhook('checkout.session.async_payment_failed', $obj);
+        $this->assertSame('available', self::werk('krieg')['status']);
+        $this->assertSame('fehlgeschlagen', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$sid])['status']);
+    }
+
+    public function testDoppelteZahlungWirdVermerkt(): void
+    {
+        $id = (string) self::werk('cool')['id'];
+        Stack::webhook('checkout.session.completed', ['id' => 'cs_test_zweite', 'status' => 'complete', 'payment_status' => 'paid', 'metadata' => ['werk_id' => $id]]);
+        $w = self::werk('cool');
+        $this->assertSame('cs_test_zweite', $w['doppelverkauf_session']);
+        $this->assertNotSame('cs_test_zweite', $w['verkauft_session']);
+    }
+
+    public function testStatusSitemapFeedRechtstexte(): void
+    {
+        $c = new Client();
+        $st = $c->get('/api/status')->json()['status'];
+        $this->assertSame('sold', $st['cool']);
+        $this->assertSame('reserved', $st['nacht']);
+        $this->assertSame('available', $st['unsere-zeit']);
+
+        $sm = $c->get('/sitemap.xml');
+        $this->assertStringContainsString('/werk/cool</loc>', $sm->body);
+        $this->assertStringContainsString('<image:loc>', $sm->body);
+        $feed = $c->get('/feed.xml')->body;
+        $this->assertStringContainsString('<g:id>unsere-zeit</g:id>', $feed);
+        $this->assertStringNotContainsString('<g:id>cool</g:id>', $feed); // verkauft
+        $this->assertStringContainsString('Disallow: /atelier', $c->get('/robots.txt')->body);
+        foreach (['/impressum', '/agb', '/widerruf', '/versand', '/datenschutz'] as $p) {
+            $this->assertSame(200, $c->get($p)->status, $p);
+        }
+        $this->assertSame(404, $c->get('/werk/gibt-es-nicht')->status);
+        $this->assertSame(404, $c->get('/irgendwas')->status);
+    }
+
+    public function testAtelierLoginSchuetzt(): void
+    {
+        $c = new Client('192.0.2.10');
+        $this->assertStringContainsString('name="passwort"', $c->get('/atelier')->body);
+        $r = $c->post('/atelier/login', ['passwort' => 'falsch']);
+        $this->assertSame(401, $r->status);
+        $this->assertStringContainsString('Passwort stimmt nicht', $r->body);
+        $this->assertNull($c->cookie('mh_atelier'));
+        $this->assertSame(403, $c->post('/atelier/login', ['passwort' => Stack::PASSWORD], ['Origin: https://boese.example'])->status);
+        $this->assertSame(401, $c->post('/atelier/upload', ['csrf' => 'x'])->status);
+        $this->assertSame(401, $c->post('/atelier/speichern', ['titel' => 'X'])->status);
+    }
+
+    private static function login(string $ip): array
+    {
+        $c = new Client($ip);
+        $r = $c->post('/atelier/login', ['passwort' => Stack::PASSWORD]);
+        if ($r->status !== 303) {
+            throw new \RuntimeException('Login fehlgeschlagen: ' . $r->status);
+        }
+        preg_match('/name="csrf" content="([a-f0-9]{64})"/', $c->get('/atelier')->body, $m);
+        return [$c, $m[1]];
+    }
+
+    private static function jpeg(int $w = 40, int $h = 30): \CURLFile
+    {
+        $f = Stack::$tmp . '/upload-' . uniqid() . '.jpg';
+        imagejpeg(imagecreatetruecolor($w, $h), $f);
+        return new \CURLFile($f, 'image/jpeg', 'foto.jpg');
+    }
+
+    public function testAtelierWerkAnlegenAendernVerkaufenAusblendenEntfernen(): void
+    {
+        [$c, $csrf] = self::login('192.0.2.11');
+        $this->assertSame(33, substr_count($c->get('/atelier')->body, '<li class="at-row'));
+
+        // Upload: drei Größen, ohne CSRF-Token abgelehnt, PNG abgelehnt
+        $this->assertSame(403, $c->post('/atelier/upload', ['full' => self::jpeg(), 'sm' => self::jpeg(), 'xs' => self::jpeg()])->status);
+        $u = $c->post('/atelier/upload', ['full' => self::jpeg(), 'sm' => self::jpeg(), 'xs' => self::jpeg(), 'csrf' => $csrf])->json();
+        $this->assertMatchesRegularExpression('#^/bilder/[0-9a-f-]+\.jpg$#', $u['url'] ?? '');
+        $u2 = $c->post('/atelier/upload', ['full' => self::jpeg(), 'sm' => self::jpeg(), 'xs' => self::jpeg(), 'csrf' => $csrf])->json();
+        $png = Stack::$tmp . '/x.png';
+        imagepng(imagecreatetruecolor(5, 5), $png);
+        $this->assertSame(415, $c->post('/atelier/upload', ['full' => new \CURLFile($png), 'sm' => self::jpeg(), 'xs' => self::jpeg(), 'csrf' => $csrf])->status);
+        $img = $c->get(str_replace('.jpg', '-sm.jpg', $u['url']));
+        $this->assertSame(200, $img->status);
+        $this->assertStringStartsWith("\xFF\xD8", $img->body);
+
+        // Neues Werk (fremde Bild-URL wird ignoriert)
+        $form = ['csrf' => $csrf, 'id' => '', 'titel' => 'Morgenrot', 'jahr' => '2026', 'serie' => 'Neu', 'technik' => 'Acryl und UV-Farbe auf Leinwand', 'masse' => '80 x 100 cm', 'beschreibung' => 'Ein neues Bild.', 'preis' => '2.450 €', 'versand' => '', 'status' => 'available', 'sichtbar' => 'ja', 'position' => '1', 'auszeichnungen' => "Preis A\nPreis B", 'ausstellungen' => '', 'w' => '1200', 'h' => '1500',
+            'bilder' => json_encode([['url' => $u['url'], 'role' => 'haupt'], ['url' => $u2['url'], 'role' => 'uv'], ['url' => 'https://boese.example/x.jpg', 'role' => 'detail']])];
+        $sv = $c->post('/atelier/speichern', $form);
+        $this->assertSame(303, $sv->status, $sv->body);
+        $w = self::werk('morgenrot');
+        $this->assertSame(245000, (int) $w['preis_cent']);
+        $this->assertSame('["Preis A","Preis B"]', $w['auszeichnungen']);
+        $bilder = Db::all('SELECT pfad, rolle FROM werk_bilder WHERE werk_id = ? ORDER BY reihenfolge', [$w['id']]);
+        $this->assertSame([['pfad' => $u['url'], 'rolle' => 'haupt'], ['pfad' => $u2['url'], 'rolle' => 'uv']], $bilder);
+        $shop = (new Client())->get('/werk/morgenrot');
+        $this->assertSame(200, $shop->status);
+        $this->assertMatchesRegularExpression('/2\.450\x{00A0}€/u', $shop->body);
+        $this->assertStringContainsString('-sm.jpg 720w', $shop->body);
+
+        // gleicher Titel → eigene Adresse
+        $c->post('/atelier/speichern', ['bilder' => '[]', 'preis' => ''] + $form);
+        $this->assertNull(self::werk('morgenrot-2')['preis_cent']);
+
+        // Preis ändern + verkauft
+        $edit = ['csrf' => $csrf, 'id' => $w['id'], 'titel' => 'Morgenrot', 'preis' => '2900', 'status' => 'sold', 'sichtbar' => 'ja', 'bilder' => json_encode([['url' => $u['url'], 'role' => 'haupt']])];
+        $this->assertSame(303, $c->post('/atelier/speichern', $edit)->status);
+        $w = self::werk('morgenrot');
+        $this->assertSame(290000, (int) $w['preis_cent']);
+        $this->assertSame('sold', $w['status']);
+        $this->assertStringContainsString('Verkauft', (new Client())->get('/werk/morgenrot')->body);
+
+        // ungültiger Preis: Eingaben bleiben erhalten
+        $err = $c->post('/atelier/speichern', ['preis' => 'abc'] + $edit);
+        $this->assertSame(422, $err->status);
+        $this->assertStringContainsString('Preis ist ungültig', $err->body);
+        $this->assertStringContainsString('name="preis" inputmode="decimal" value="abc"', $err->body);
+
+        // fehlendes oder falsches CSRF-Token, fremde Herkunft
+        $this->assertSame(403, $c->post('/atelier/speichern', ['csrf' => str_repeat('0', 64)] + $edit)->status);
+        $this->assertSame(403, $c->post('/atelier/speichern', $edit, ['Origin: https://boese.example'])->status);
+
+        // ausblenden
+        $c->post('/atelier/speichern', ['sichtbar' => 'nein'] + $edit);
+        $this->assertSame(404, (new Client())->get('/werk/morgenrot')->status);
+        $this->assertStringContainsString('Ausgeblendet', $c->get('/atelier')->body);
+
+        // entfernen (archivieren)
+        $c->post('/atelier/archivieren', ['csrf' => $csrf, 'id' => self::werk('morgenrot-2')['id']]);
+        $this->assertSame(0, (int) self::werk('morgenrot-2')['aktiv']);
+        $this->assertSame(404, (new Client())->get('/werk/morgenrot-2')->status);
+
+        // abmelden: Sitzung ist serverseitig ungültig
+        $token = $c->cookie('mh_atelier');
+        $c->post('/atelier/logout', ['csrf' => $csrf]);
+        $stolen = new Client('192.0.2.12');
+        $stolen->request('GET', '/atelier', null, ["Cookie: mh_atelier=$token"]);
+        $this->assertStringContainsString('name="passwort"', $stolen->request('GET', '/atelier', null, ["Cookie: mh_atelier=$token"])->body);
+    }
+
+    public function testWiderrufWirdVerschluesseltGespeichert(): void
+    {
+        $c = new Client('192.0.2.20');
+        $f = $c->get('/vertrag-widerrufen');
+        $this->assertStringContainsString('>Widerruf bestätigen<', $f->body);
+        $this->assertStringContainsString('vertrag-widerrufen', $c->get('/widerruf')->body);
+        $this->assertSame(422, $c->post('/vertrag-widerrufen', ['name' => 'Erika Muster', 'vertrag' => 'NACHT', 'email' => 'kaputt'])->status);
+        $this->assertSame(403, $c->post('/vertrag-widerrufen', ['name' => 'x'], ['Origin: https://boese.example'])->status);
+
+        $r = $c->post('/vertrag-widerrufen', ['name' => 'Erika Muster', 'vertrag' => 'Werk „NACHT“, gekauft am 20.11.2026', 'email' => 'Erika@Example.test']);
+        $this->assertSame(200, $r->status);
+        $this->assertStringContainsString('Ihr Widerruf ist eingegangen', $r->body);
+        $this->assertMatchesRegularExpression('/\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}:\d{2} Uhr/', $r->body);
+        $this->assertMatchesRegularExpression('/W-\d{8}-[0-9A-F]{6}/', $r->body);
+
+        $row = Db::one('SELECT * FROM widerrufe ORDER BY id DESC LIMIT 1');
+        $this->assertStringStartsWith('v1.', $row['daten_enc']);
+        $this->assertStringNotContainsString('Erika', implode('|', $row));
+        $this->assertStringNotContainsString('example', implode('|', $row));
+        $this->assertSame(1, (int) $row['mail_versendet']);
+
+        $mails = Stack::mails();
+        $this->assertContains('erika@example.test', array_column($mails, 'to'));
+        $this->assertNotEmpty(array_filter($mails, fn ($m) => str_starts_with($m['subject'], 'Widerruf eingegangen')));
+
+        [$a] = self::login('192.0.2.21');
+        $this->assertStringContainsString('Erika Muster', $a->get('/atelier/widerrufe')->body);
+    }
+
+    public function testAnfrageWirdVerschluesseltGespeichertUndGemeldet(): void
+    {
+        $c = new Client('192.0.2.30');
+        $r = $c->post('/anfrage', ['anliegen' => 'preis', 'werk' => 'nacht', 'seite' => Stack::base() . '/werk/nacht', 'name' => 'Max Test', 'email' => 'max@example.test', 'telefon' => '0123 456', 'nachricht' => 'Was kostet NACHT?', 'datenschutz' => 'ja'], ['Accept: application/json']);
+        $this->assertSame(['ok' => true], $r->json());
+        $this->assertSame(422, $c->post('/anfrage', ['name' => 'Max', 'email' => 'max@example.test', 'nachricht' => 'x'], ['Accept: application/json'])->status); // ohne Einwilligung
+        $this->assertSame(['ok' => true], $c->post('/anfrage', ['bot-field' => 'spam', 'name' => 'Bot'], ['Accept: application/json'])->json());
+
+        $row = Db::one('SELECT * FROM anfragen ORDER BY id DESC LIMIT 1');
+        $this->assertSame('preis', $row['anliegen']);
+        $this->assertSame('nacht', $row['werk_slug']);
+        $this->assertStringNotContainsString('Max', $row['daten_enc']);
+        $this->assertSame(1, (int) Db::one('SELECT COUNT(*) AS n FROM anfragen')['n']); // Bot nicht gespeichert
+        $m = array_values(array_filter(Stack::mails(), fn ($m) => str_starts_with($m['subject'], 'Preisanfrage')));
+        $this->assertCount(1, $m);
+        $this->assertSame('max@example.test', $m[0]['replyTo']);
+
+        [$a] = self::login('192.0.2.31');
+        $this->assertStringContainsString('Was kostet NACHT?', $a->get('/atelier/anfragen')->body);
+    }
+
+    public function testMissbrauchsschutz(): void
+    {
+        // Checkout: höchstens 3 neue Bezahlvorgänge je IP
+        $free = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 5"), 'slug');
+        $ip = new Client('203.0.113.7');
+        foreach (array_slice($free, 0, 3) as $s) {
+            $this->assertSame(200, self::buy($s, $ip)->status, $s);
+        }
+        $r4 = self::buy($free[3], $ip);
+        $this->assertSame(429, $r4->status);
+        $this->assertSame('zuviele', $r4->json()['error']);
+        $this->assertNull(self::werk($free[3])['reserviert_session']);
+        $this->assertSame(200, self::buy($free[3], new Client('203.0.113.8'))->status);
+        $this->assertStringContainsString('data-notice="zuviele"', (new Client())->get('/werk/' . $free[4])->body);
+
+        // Atelier: nach 3 Fehlversuchen gesperrt, auch für das richtige Passwort; andere IP nicht betroffen
+        $bad = new Client('203.0.113.20');
+        for ($i = 0; $i < 3; $i++) {
+            $this->assertSame(401, $bad->post('/atelier/login', ['passwort' => 'falsch'])->status);
+        }
+        $locked = $bad->post('/atelier/login', ['passwort' => Stack::PASSWORD]);
+        $this->assertSame(429, $locked->status);
+        $this->assertStringContainsString('Zu viele Fehlversuche', $locked->body);
+        $this->assertNull($bad->cookie('mh_atelier'));
+        $this->assertSame(303, (new Client('203.0.113.21'))->post('/atelier/login', ['passwort' => Stack::PASSWORD])->status);
+
+        // Widerruf: höchstens 5 je IP und Stunde
+        $w = new Client('203.0.113.30');
+        for ($i = 0; $i < 5; $i++) {
+            $this->assertSame(200, $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => "opfer$i@example.test"])->status);
+        }
+        $blocked = $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => 'opfer9@example.test']);
+        $this->assertSame(429, $blocked->status);
+        $this->assertStringContainsString('per E-Mail an', $blocked->body);
+
+        // Je Empfänger höchstens 2 Bestätigungen pro Tag; der Widerruf wird trotzdem gespeichert
+        foreach (['203.0.113.31', '203.0.113.32', '203.0.113.33'] as $i => $addr) {
+            (new Client($addr))->post('/vertrag-widerrufen', ['name' => 'Opfer', 'vertrag' => 'X', 'email' => 'opfer-mail@example.test']);
+        }
+        $this->assertCount(2, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer-mail@example.test'));
+        $rows = Db::all('SELECT mail_versendet FROM widerrufe ORDER BY id DESC LIMIT 3');
+        $this->assertSame(['0', '1', '1'], array_map(fn ($r) => (string) $r['mail_versendet'], $rows));
+
+        // In der Datenbank stehen keine IP-Adressen oder E-Mails im Klartext
+        $dump = json_encode(Db::all('SELECT * FROM rate_limits'));
+        $this->assertStringNotContainsString('203.0.113', $dump);
+        $this->assertStringNotContainsString('example.test', $dump);
+    }
+
+    public function testCronGibtAbgelaufeneReservierungenFreiUndLoescht(): void
+    {
+        $id = (int) self::werk('nacht')['id'];
+        Db::run('UPDATE werke SET reserviert_bis = ? WHERE id = ?', [gmdate('Y-m-d H:i:s', time() - 60), $id]);
+        Db::run("INSERT INTO anfragen (ref, eingang, anliegen, daten_enc, email_hmac) VALUES ('A-ALT', UTC_TIMESTAMP() - INTERVAL 13 MONTH, 'allgemein', 'v1.x.y.z', REPEAT('0', 64))");
+        Db::run("INSERT INTO widerrufe (ref, eingang, daten_enc, email_hmac) VALUES ('W-ALT', UTC_TIMESTAMP() - INTERVAL 37 MONTH, 'v1.x.y.z', REPEAT('0', 64)), ('W-JUNG', UTC_TIMESTAMP() - INTERVAL 35 MONTH, 'v1.x.y.z', REPEAT('0', 64))");
+        Db::run("DELETE FROM merker WHERE name = 'cron_taeglich'");
+
+        Stack::php('bin/cron.php');
+
+        $this->assertNull(self::werk('nacht')['reserviert_session']);
+        $this->assertNull(Db::one("SELECT 1 FROM anfragen WHERE ref = 'A-ALT'"));
+        $this->assertNull(Db::one("SELECT 1 FROM widerrufe WHERE ref = 'W-ALT'"));
+        $this->assertNotNull(Db::one("SELECT 1 FROM widerrufe WHERE ref = 'W-JUNG'"));
+        $this->assertNotNull(Db::one("SELECT 1 FROM merker WHERE name = 'cron_letzter_lauf'"));
+    }
+
+    public function testSmokeSkriptLaeuft(): void
+    {
+        $out = '';
+        try {
+            $out = Stack::php('bin/smoke.php');
+        } catch (\RuntimeException $e) {
+            $out = $e->getMessage(); // SITE_URL ohne https und fehlendes SMTP sind im Test erwartet
+        }
+        $this->assertStringContainsString('ok   Datenbank erreichbar', $out);
+        $this->assertStringContainsString('ok   Verschlüsselung funktioniert', $out);
+    }
+}

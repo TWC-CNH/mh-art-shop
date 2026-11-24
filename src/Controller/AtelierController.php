@@ -1,0 +1,542 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Controller;
+
+use App\AtelierAuth;
+use App\Catalog;
+use App\Config;
+use App\Crypto;
+use App\Db;
+use App\Http;
+use App\Log;
+use App\RateLimit;
+use App\Works;
+
+/**
+ * Atelier unter /atelier (passwortgeschützt): Werke anlegen und bearbeiten, Fotos hochladen,
+ * Preis, Status, Sichtbarkeit; Widerrufe und Anfragen ansehen. Alles liegt in der Datenbank.
+ */
+final class AtelierController
+{
+    private const ROLE_LABEL = ['haupt' => 'Hauptfoto', 'uv' => 'Schwarzlicht', 'detail' => 'Detail', 'raum' => 'Im Raum', 'ansicht' => 'Ansicht'];
+    private const MAX_IMAGES = 8;
+
+    private static function page(string $title, string $body, int $status = 200): never
+    {
+        $csrf = e(AtelierAuth::csrfToken());
+        http_response_code($status);
+        header('Content-Type: text/html; charset=utf-8');
+        header('Cache-Control: no-store');
+        header('X-Robots-Tag: noindex, nofollow');
+        echo '<!doctype html>
+<html lang="de" data-theme="day"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><meta name="csrf" content="' . $csrf . '"><title>' . e($title) . ' · Atelier</title>
+<link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/assets/shop.css?v=a3"><link rel="stylesheet" href="/assets/atelier.css?v=a4"></head>
+<body class="atelier-body">
+<header class="at-head"><a href="/atelier" class="at-brand"><img src="/assets/logo-mhart.png" alt="MH ART" height="34"> <span>Atelier</span></a>
+<nav><a href="/" target="_blank" rel="noopener">Shop ansehen ↗</a></nav></header>
+<main class="at-main">' . $body . '</main>
+<script src="/assets/atelier.js?v=a6" defer></script></body></html>';
+        exit;
+    }
+
+    private static function csrfField(): string
+    {
+        return '<input type="hidden" name="csrf" value="' . e(AtelierAuth::csrfToken()) . '">';
+    }
+
+    private static function loginPage(string $error = '', int $status = 0): never
+    {
+        if (!AtelierAuth::configured()) {
+            self::page('Atelier', '<section class="at-login"><h1 class="display">Atelier</h1><p>Das Atelier ist noch nicht eingerichtet. Bitte auf dem Server <code>ATELIER_PASSWORD_HASH</code> in der <code>.env</code> setzen (erzeugen mit <code>php bin/atelier-password.php</code>).</p></section>');
+        }
+        self::page('Anmelden', '<section class="at-login">
+    <p class="eyebrow">MH ART</p><h1 class="display">Atelier</h1>
+    <p class="muted">Hier verwalten Sie Ihre Werke, Fotos und Preise.</p>
+    ' . ($error !== '' ? '<p class="at-error">' . e($error) . '</p>' : '') . '
+    <form method="post" action="/atelier/login" class="at-form">
+      <label class="field"><span>Passwort</span><input type="password" name="passwort" required autocomplete="current-password" autofocus></label>
+      <button class="btn btn--wide" type="submit">Anmelden</button>
+    </form></section>', $status ?: ($error !== '' ? 401 : 200));
+    }
+
+    private static function thumbOf(string $u): string
+    {
+        return preg_match('#^/bilder/[a-z0-9-]+\.jpg$#', $u) ? preg_replace('/\.jpg$/', '-xs.jpg', $u) : $u;
+    }
+
+    // ---------- Ansichten ----------
+
+    private static function listPage(string $msg = ''): never
+    {
+        $works = Catalog::allForAtelier();
+        $rows = '';
+        foreach ($works as $w) {
+            $hidden = !(int) $w['_row']['sichtbar'];
+            $st = $hidden ? 'Ausgeblendet' : ($w['status'] === 'sold' ? 'Verkauft' : ($w['status'] === 'reserved' ? 'Reserviert' : 'Im Shop'));
+            $thumb = $w['image'] !== '' ? '<img src="' . e(self::thumbOf($w['thumb'] ?: $w['image'])) . '" alt="" loading="lazy">' : '<span class="at-noimg">Kein Foto</span>';
+            $rows .= '<li class="at-row' . ($hidden ? ' is-hidden' : '') . '">
+      <a class="at-row-link" href="/atelier/werk/' . $w['id'] . '">
+        <span class="at-thumb">' . $thumb . '</span>
+        <span class="at-info"><strong>' . e($w['title']) . '</strong><span class="muted">' . e(implode(' · ', array_filter([(string) ($w['year'] ?? ''), $w['size']]))) . '</span></span>
+        <span class="at-price">' . ($w['priceCents'] ? e(Works::euro($w['priceCents'])) : '<span class="muted">auf Anfrage</span>') . '</span>
+        <span class="at-status at-status--' . ($hidden ? 'hidden' : $w['status']) . '">' . $st . '</span>
+      </a>
+    </li>';
+        }
+        $demo = Config::get()['demo'] ? ' <strong>Hinweis:</strong> Stripe ist noch nicht verbunden, Kaufen ist im Shop gesperrt.' : '';
+        self::page('Werke', '
+    <div class="at-top"><div><p class="eyebrow">Atelier</p><h1 class="display">Ihre Werke <span class="at-count">' . count($works) . '</span></h1></div>
+    <div class="at-top-actions"><a class="btn" href="/atelier/neu">+ Neues Werk</a><a class="btn btn--ghost" href="/atelier/anfragen">Anfragen</a><a class="btn btn--ghost" href="/atelier/widerrufe">Widerrufe</a>
+    <form method="post" action="/atelier/logout">' . self::csrfField() . '<button class="btn btn--ghost" type="submit">Abmelden</button></form></div></div>
+    ' . ($msg !== '' ? '<p class="at-ok">' . e($msg) . '</p>' : '') . '
+    <input class="at-search" type="search" placeholder="Werk suchen …" data-at-search aria-label="Werk suchen">
+    <ul class="at-list" data-at-list>' . $rows . '</ul>
+    <p class="muted at-hint">Tipp: Reihenfolge im Shop über das Feld „Position“ im Werk. Verkäufe über den Shop werden automatisch als „Verkauft“ markiert.' . $demo . '</p>');
+    }
+
+    /** @param array|null $w Werk aus Catalog::byIdForAtelier oder ein Entwurf nach Fehler */
+    private static function editPage(?array $w, string $error = '', string $msg = ''): never
+    {
+        $isNew = !$w || empty($w['id']);
+        $r = $w['_row'] ?? [];
+        $images = $w['_images'] ?? ($w ? self::imagesOf($w) : []);
+        $hidden = $w ? !(int) ($r['sichtbar'] ?? 1) : false;
+        if (isset($w['_hidden'])) {
+            $hidden = $w['_hidden'];
+        }
+        $priceEur = $w['_price'] ?? ($w && $w['priceCents'] ? str_replace('.', ',', (string) ($w['priceCents'] / 100)) : '');
+        $shipEur = $w['_ship'] ?? ($w && $w['shippingEur'] !== null ? str_replace('.', ',', (string) $w['shippingEur']) : '');
+        $status = $w['_status'] ?? ($w['status'] ?? 'available');
+        $v = fn ($x) => e($x ?? '');
+
+        $statusNote = '';
+        if (!$isNew && $status === 'sold' && !empty($r['verkauft_session'])) {
+            $date = !empty($r['verkauft_am']) ? ' am ' . date('d.m.Y', strtotime($r['verkauft_am'])) : '';
+            $statusNote = '<p class="at-note">Über den Shop verkauft' . $date . '. Käuferdaten stehen in Stripe unter „Zahlungen“' . (!empty($r['doppelverkauf_session']) ? ' <strong>Achtung: zweite Zahlung eingegangen, bitte in Stripe erstatten.</strong>' : '') . '.</p>';
+        } elseif (!$isNew && ($w['status'] ?? '') === 'reserved') {
+            $until = (new \DateTimeImmutable($r['reserviert_bis'] . ' UTC'))->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('H:i');
+            $statusNote = '<p class="at-note">Gerade reserviert: Jemand ist im Bezahlvorgang (bis ' . $until . ' Uhr). Danach wird es automatisch verkauft oder wieder frei.</p>';
+        }
+        $lines = fn ($list) => e(implode("\n", $list ?? []));
+        $roleOpts = '';
+        foreach (self::ROLE_LABEL as $k => $l) {
+            if ($k !== 'haupt') {
+                $roleOpts .= "<option value=\"$k\">$l</option>";
+            }
+        }
+
+        $title = $isNew ? 'Neues Werk' : $w['title'];
+        self::page($title, '
+    <p class="at-back"><a href="/atelier">← Alle Werke</a></p>
+    <div class="at-top"><div><p class="eyebrow">' . ($isNew ? 'Neues Werk' : 'Werk bearbeiten') . '</p><h1 class="display">' . ($isNew ? 'Neues Werk anlegen' : $v($w['title'])) . '</h1></div>
+    ' . (!$isNew && !empty($w['slug']) ? '<a class="btn btn--ghost" href="/werk/' . $v($w['slug']) . '" target="_blank" rel="noopener">Im Shop ansehen ↗</a>' : '') . '</div>
+    ' . ($error !== '' ? '<p class="at-error">' . e($error) . '</p>' : '') . ($msg !== '' ? '<p class="at-ok">' . e($msg) . '</p>' : '') . '
+    <form method="post" action="/atelier/speichern" class="at-form at-edit" data-at-edit>
+      ' . self::csrfField() . '
+      <input type="hidden" name="id" value="' . $v($isNew ? '' : $w['id']) . '">
+      <input type="hidden" name="bilder" value="' . $v(json_encode($images, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) . '" data-at-images-json>
+      <input type="hidden" name="w" value="' . $v($w['w'] ?? '') . '" data-at-w><input type="hidden" name="h" value="' . $v($w['h'] ?? '') . '" data-at-h>
+
+      <section class="at-card">
+        <h2>Fotos</h2>
+        <p class="muted">Das erste Foto ist das Hauptfoto im Shop. Für jedes weitere Foto wählen Sie, was es zeigt. Bis zu ' . self::MAX_IMAGES . ' Fotos, eines davon als Schwarzlicht-Aufnahme. Große Fotos werden beim Hochladen automatisch verkleinert.</p>
+        <ul class="at-photos" data-at-photos></ul>
+        <label class="at-upload">
+          <input type="file" accept="image/*" multiple data-at-file>
+          <span class="btn btn--ghost">+ Fotos hinzufügen</span>
+          <span class="muted" data-at-upload-status></span>
+        </label>
+      </section>
+
+      <section class="at-card">
+        <h2>Angaben</h2>
+        <div class="at-grid">
+          <label class="field field--wide"><span>Titel *</span><input name="titel" required maxlength="120" value="' . $v($w['title'] ?? '') . '" placeholder="z. B. NACHT"></label>
+          <label class="field"><span>Jahr</span><input name="jahr" inputmode="numeric" maxlength="4" value="' . $v($w['year'] ?? '') . '" placeholder="2026"></label>
+          <label class="field"><span>Serie <em>(optional)</em></span><input name="serie" maxlength="60" value="' . $v($w['series'] ?? '') . '" placeholder="z. B. Schirm"></label>
+          <label class="field field--wide"><span>Technik</span><input name="technik" maxlength="200" value="' . $v($w['technique'] ?? '') . '" placeholder="Acryl auf Leinwand, UV reaktiv"></label>
+          <label class="field field--wide"><span>Maße <em>(Höhe x Breite x Tiefe)</em></span><input name="masse" maxlength="80" value="' . $v($w['size'] ?? '') . '" placeholder="100 x 70 x 2 cm"></label>
+          <label class="field field--wide"><span>Beschreibung</span><textarea name="beschreibung" rows="6" maxlength="4000">' . $v($w['description'] ?? '') . '</textarea></label>
+        </div>
+      </section>
+
+      <section class="at-card">
+        <h2>Preis &amp; Verkauf</h2>
+        <div class="at-grid">
+          <label class="field"><span>Preis in Euro</span><input name="preis" inputmode="decimal" value="' . $v($priceEur) . '" placeholder="leer = Preis auf Anfrage"></label>
+          <label class="field"><span>Eigener Versandpreis <em>(optional)</em></span><input name="versand" inputmode="decimal" value="' . $v($shipEur) . '" placeholder="sonst nach Größe"></label>
+          <fieldset class="field field--wide at-radios"><legend>Status</legend>' . $statusNote . '
+            <label><input type="radio" name="status" value="available" ' . ($status !== 'sold' ? 'checked' : '') . '> Verfügbar</label>
+            <label><input type="radio" name="status" value="sold" ' . ($status === 'sold' ? 'checked' : '') . '> Verkauft</label>
+          </fieldset>
+          <fieldset class="field field--wide at-radios"><legend>Sichtbarkeit</legend>
+            <label><input type="radio" name="sichtbar" value="ja" ' . (!$hidden ? 'checked' : '') . '> Im Shop zeigen</label>
+            <label><input type="radio" name="sichtbar" value="nein" ' . ($hidden ? 'checked' : '') . '> Ausblenden</label>
+          </fieldset>
+          <label class="field"><span>Position im Shop <em>(1 = ganz vorn)</em></span><input name="position" inputmode="numeric" value="' . $v(isset($w['sort']) && $w['sort'] !== 9999 ? $w['sort'] : '') . '" placeholder="z. B. 5"></label>
+        </div>
+        <p class="muted">Ohne Preis erscheint „Preis auf Anfrage“ mit Anfrage-Formular. Mit Preis lässt sich das Werk direkt kaufen.</p>
+      </section>
+
+      <section class="at-card">
+        <h2>Auszeichnungen &amp; Ausstellungen <em class="muted">(optional)</em></h2>
+        <div class="at-grid">
+          <label class="field field--wide"><span>Auszeichnungen <em>(eine pro Zeile)</em></span><textarea name="auszeichnungen" rows="3">' . $lines($w['awards'] ?? []) . '</textarea></label>
+          <label class="field field--wide"><span>Ausstellungen <em>(eine pro Zeile)</em></span><textarea name="ausstellungen" rows="3">' . $lines($w['exhibitions'] ?? []) . '</textarea></label>
+        </div>
+      </section>
+
+      <div class="at-save"><button class="btn btn--wide" type="submit" data-at-submit>' . ($isNew ? 'Werk anlegen' : 'Änderungen speichern') . '</button></div>
+    </form>
+    ' . (!$isNew ? '<form method="post" action="/atelier/archivieren" class="at-danger" data-confirm="„' . $v($w['title']) . '“ wirklich aus dem Shop entfernen? (Das Werk wird archiviert und taucht nicht mehr auf.)">
+      ' . self::csrfField() . '<input type="hidden" name="id" value="' . $v($w['id']) . '"><button class="btn btn--ghost" type="submit">Werk aus dem Shop entfernen</button></form>' : '') . '
+    <template data-at-roles>' . $roleOpts . '</template>', $error !== '' ? 422 : 200);
+    }
+
+    /** Fotos eines Werks als Liste [{url, role}] in Shop-Reihenfolge (Hauptfoto, Schwarzlicht, weitere). */
+    private static function imagesOf(array $w): array
+    {
+        $out = [];
+        if ($w['image'] !== '') {
+            $out[] = ['url' => $w['image'], 'role' => 'haupt'];
+        }
+        if ($w['uvImage'] !== '') {
+            $out[] = ['url' => $w['uvImage'], 'role' => 'uv'];
+        }
+        foreach ($w['gallery'] as $g) {
+            $out[] = ['url' => $g['src'], 'role' => $g['kind']];
+        }
+        return $out;
+    }
+
+    // ---------- Speichern ----------
+
+    private static function parseEuro(string $s): ?int
+    {
+        $t = preg_replace('/\s|€/u', '', trim($s)) ?? '';
+        $t = preg_replace('/\.(?=\d{3}(\D|$))/', '', $t) ?? '';
+        $t = str_replace(',', '.', $t);
+        if ($t === '') {
+            return null;
+        }
+        if (!is_numeric($t) || (float) $t <= 0 || (float) $t >= 1e7) {
+            return -1;
+        }
+        return (int) round((float) $t * 100);
+    }
+
+    private static function lines(string $s): array
+    {
+        return array_values(array_filter(array_map(fn ($x) => mb_substr(trim($x), 0, 200), preg_split('/\r?\n/', $s) ?: []), fn ($x) => $x !== ''));
+    }
+
+    /** Erlaubte Bildpfade: eigene Uploads oder vorhandene Werkfotos. Keine fremden Adressen. */
+    private static function validImagePath(string $u): bool
+    {
+        return (bool) preg_match('#^/(bilder|img/works)/[A-Za-z0-9._-]+\.(jpg|jpeg|webp|png)$#', $u);
+    }
+
+    private static function draft(?array $prev): array
+    {
+        $imgs = json_decode(Http::post('bilder', 20000), true);
+        $imgs = is_array($imgs) ? array_values(array_filter($imgs, fn ($x) => is_array($x) && is_string($x['url'] ?? null) && self::validImagePath($x['url']))) : [];
+        return array_merge($prev ?? [], [
+            'id' => $prev['id'] ?? '',
+            'title' => Http::post('titel', 120),
+            'year' => Http::post('jahr', 4),
+            'series' => Http::post('serie', 60),
+            'technique' => Http::post('technik', 200),
+            'size' => Http::post('masse', 80),
+            'description' => Http::post('beschreibung', 4000),
+            'awards' => self::lines(Http::post('auszeichnungen')),
+            'exhibitions' => self::lines(Http::post('ausstellungen')),
+            'w' => Http::post('w', 5), 'h' => Http::post('h', 5),
+            'sort' => (int) (preg_replace('/\D/', '', Http::post('position', 5)) ?: 9999),
+            '_images' => $imgs,
+            '_price' => Http::post('preis', 20),
+            '_ship' => Http::post('versand', 20),
+            '_status' => Http::post('status') === 'sold' ? 'sold' : 'available',
+            '_hidden' => Http::post('sichtbar') === 'nein',
+        ]);
+    }
+
+    /** @return array{error?: string, id?: int, msg?: string} */
+    private static function save(): array
+    {
+        $id = (int) Http::post('id', 12);
+        $title = trim(Http::post('titel', 120));
+        if ($title === '') {
+            return ['error' => 'Bitte einen Titel eingeben.'];
+        }
+        $cents = self::parseEuro(Http::post('preis', 20));
+        if ($cents === -1) {
+            return ['error' => 'Der Preis ist ungültig. Bitte nur eine Zahl eingeben, z. B. 2400.'];
+        }
+        $shipRaw = str_replace(',', '.', trim(Http::post('versand', 20)));
+        if ($shipRaw !== '' && (!is_numeric($shipRaw) || (float) $shipRaw < 0)) {
+            return ['error' => 'Der Versandpreis ist ungültig.'];
+        }
+        $year = preg_replace('/\D/', '', Http::post('jahr', 4));
+
+        $images = json_decode(Http::post('bilder', 20000), true);
+        $images = is_array($images) ? array_values(array_filter($images, fn ($x) => is_array($x) && is_string($x['url'] ?? null) && self::validImagePath($x['url']))) : [];
+        $images = array_slice($images, 0, self::MAX_IMAGES);
+        $main = $images[0] ?? null;
+        $uv = null;
+        foreach (array_slice($images, 1) as $x) {
+            if (($x['role'] ?? '') === 'uv') {
+                $uv = $x;
+                break;
+            }
+        }
+        $rest = array_values(array_filter(array_slice($images, 1), fn ($x) => $x !== $uv));
+        $status = Http::post('status') === 'sold' ? 'sold' : 'available';
+        $size = trim(Http::post('masse', 80));
+
+        $data = [
+            'titel' => $title,
+            'jahr' => $year !== '' ? (int) $year : null,
+            'serie' => trim(Http::post('serie', 60)),
+            'technik' => trim(Http::post('technik', 200)),
+            'masse' => $size,
+            'format' => Works::formatFromSize($size),
+            'beschreibung' => trim(Http::post('beschreibung', 4000)),
+            'preis_cent' => $cents,
+            'versand_cent' => $shipRaw !== '' ? (int) round((float) $shipRaw * 100) : null,
+            'sichtbar' => Http::post('sichtbar') === 'nein' ? 0 : 1,
+            'position' => (int) (preg_replace('/\D/', '', Http::post('position', 5)) ?: 9999),
+            'bild_breite' => ($bw = (int) preg_replace('/\D/', '', Http::post('w', 5))) ?: null,
+            'bild_hoehe' => ($bh = (int) preg_replace('/\D/', '', Http::post('h', 5))) ?: null,
+            'thumb' => $main && preg_match('#^/bilder/[a-z0-9-]+\.jpg$#', $main['url']) ? preg_replace('/\.jpg$/', '-sm.jpg', $main['url']) : null,
+            'auszeichnungen' => json_encode(self::lines(Http::post('auszeichnungen')), JSON_UNESCAPED_UNICODE),
+            'ausstellungen' => json_encode(self::lines(Http::post('ausstellungen')), JSON_UNESCAPED_UNICODE),
+        ];
+
+        return Db::transaction(function () use ($id, $data, $status, $main, $uv, $rest) {
+            if ($id === 0) {
+                $data['slug'] = Catalog::uniqueSlug($data['titel']);
+                $data['status'] = $status;
+                $cols = array_keys($data);
+                Db::run('INSERT INTO werke (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($data));
+                $id = Db::lastId();
+                $msg = 'Werk angelegt. Es erscheint sofort im Shop.';
+            } else {
+                $prev = Db::one('SELECT status FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
+                if (!$prev) {
+                    return ['error' => 'Das Werk gibt es nicht mehr.'];
+                }
+                $set = implode(', ', array_map(fn ($c) => "$c = ?", array_keys($data)));
+                Db::run("UPDATE werke SET $set WHERE id = ?", [...array_values($data), $id]);
+                if ($status === 'sold' && $prev['status'] !== 'sold') {
+                    Db::run('UPDATE werke SET status = \'sold\', verkauft_am = UTC_DATE(), reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
+                } elseif ($status === 'available' && $prev['status'] === 'sold') {
+                    Db::run('UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL, doppelverkauf_session = NULL WHERE id = ?', [$id]);
+                }
+                $msg = 'Gespeichert. Der Shop zeigt die Änderung sofort.';
+            }
+            Db::run('DELETE FROM werk_bilder WHERE werk_id = ?', [$id]);
+            $i = 0;
+            foreach (array_filter([$main ? ['url' => $main['url'], 'role' => 'haupt'] : null, $uv ? ['url' => $uv['url'], 'role' => 'uv'] : null]) as $x) {
+                Db::run('INSERT INTO werk_bilder (werk_id, pfad, rolle, reihenfolge) VALUES (?, ?, ?, ?)', [$id, $x['url'], $x['role'], $i++]);
+            }
+            foreach ($rest as $x) {
+                $role = in_array($x['role'] ?? '', ['detail', 'raum', 'ansicht'], true) ? $x['role'] : 'ansicht';
+                Db::run('INSERT INTO werk_bilder (werk_id, pfad, rolle, reihenfolge) VALUES (?, ?, ?, ?)', [$id, $x['url'], $role, $i++]);
+            }
+            return ['id' => $id, 'msg' => $msg];
+        });
+    }
+
+    // ---------- Foto-Upload (vom Browser bereits verkleinert) ----------
+
+    private static function upload(): never
+    {
+        $dir = Config::get()['uploadDir'];
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true)) {
+            Http::jsonOut(['error' => 'Upload-Ordner fehlt'], 500);
+        }
+        $id = bin2hex(random_bytes(16));
+        $id = substr($id, 0, 8) . '-' . substr($id, 8, 4) . '-' . substr($id, 12, 4) . '-' . substr($id, 16, 4) . '-' . substr($id, 20);
+        $written = [];
+        foreach (['' => 'full', '-sm' => 'sm', '-xs' => 'xs'] as $suffix => $field) {
+            $f = $_FILES[$field] ?? null;
+            if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) {
+                self::cleanup($written);
+                Http::jsonOut(['error' => 'Datei fehlt'], 400);
+            }
+            if ($f['size'] > 4 * 1024 * 1024) {
+                self::cleanup($written);
+                Http::jsonOut(['error' => 'Foto zu groß'], 413);
+            }
+            $bytes = (string) file_get_contents($f['tmp_name']);
+            if (!str_starts_with($bytes, "\xFF\xD8")) {
+                self::cleanup($written);
+                Http::jsonOut(['error' => 'Nur JPG erlaubt'], 415);
+            }
+            // Neu speichern: entfernt Metadaten (z. B. GPS) und alles, was kein Bild ist
+            $img = @imagecreatefromstring($bytes);
+            if (!$img || imagesx($img) > 4000 || imagesy($img) > 4000) {
+                self::cleanup($written);
+                Http::jsonOut(['error' => 'Foto nicht lesbar'], 415);
+            }
+            $path = "$dir/$id$suffix.jpg";
+            imagejpeg($img, $path, 86);
+            $written[] = $path;
+        }
+        Http::jsonOut(['url' => "/bilder/$id.jpg"]);
+    }
+
+    private static function cleanup(array $paths): void
+    {
+        foreach ($paths as $p) {
+            @unlink($p);
+        }
+    }
+
+    // ---------- Widerrufe und Anfragen ----------
+
+    private static function decryptRows(array $rows, string $table): array
+    {
+        $ok = [];
+        $bad = 0;
+        foreach ($rows as $r) {
+            try {
+                $ok[] = Crypto::decrypt($r['daten_enc'], "$table/{$r['ref']}") + ['_row' => $r];
+            } catch (\Throwable $e) {
+                $bad++;
+                Log::error("Eintrag $table/{$r['ref']} nicht entschlüsselbar: " . $e->getMessage());
+            }
+        }
+        return [$ok, $bad];
+    }
+
+    private static function cryptoWarning(int $bad): string
+    {
+        if (!Crypto::ready()) {
+            return '<p class="at-error">Es ist kein Schlüssel für die Verschlüsselung eingerichtet (<code>DATA_ENCRYPTION_KEY</code>). Neue Einträge werden deshalb nicht gespeichert, sie kommen nur per E-Mail an.</p>';
+        }
+        return $bad ? '<p class="at-error">' . $bad . ' Eintrag/Einträge lassen sich mit dem aktuellen Schlüssel nicht entschlüsseln. Wurde der Schlüssel gewechselt, den bisherigen als <code>DATA_ENCRYPTION_KEY_OLD</code> eintragen.</p>' : '';
+    }
+
+    private static function withdrawalsPage(): never
+    {
+        [$recs, $bad] = self::decryptRows(Db::all('SELECT * FROM widerrufe ORDER BY eingang DESC LIMIT 200'), 'widerrufe');
+        $list = $recs ? '<ul class="at-list">' . implode('', array_map(fn ($r) => '<li class="at-card at-withdraw"><strong>' . e($r['contract']) . '</strong><span>' . e($r['name']) . ' · <a href="mailto:' . e($r['email']) . '">' . e($r['email']) . '</a></span><span class="muted">Eingang ' . e($r['receivedLabel']) . ' · ' . e($r['ref']) . ((int) $r['_row']['mail_versendet'] ? '' : ' · Bestätigung nicht versendet') . '</span></li>', $recs)) . '</ul>' : '<p class="at-card">Bisher keine Widerrufe.</p>';
+        $years = Config::get()['retention']['withdrawalYears'];
+        self::page('Widerrufe', '<p class="at-back"><a href="/atelier">← Alle Werke</a></p>
+        <div class="at-top"><div><p class="eyebrow">Nachweise</p><h1 class="display">Widerrufe</h1></div></div>
+        <p class="muted">Hier landen alle Widerrufe, die Käufer über „Vertrag widerrufen“ abgeschickt haben. Sie bekommen zusätzlich jedes Mal eine E-Mail. Nach Rückerhalt des Werks: Zahlung in Stripe erstatten und das Werk wieder auf „Verfügbar“ stellen. Die Angaben sind verschlüsselt gespeichert und werden nach ' . $years . ' Jahren automatisch gelöscht.</p>
+        ' . self::cryptoWarning($bad) . $list);
+    }
+
+    private static function inquiriesPage(): never
+    {
+        [$recs, $bad] = self::decryptRows(Db::all('SELECT * FROM anfragen ORDER BY eingang DESC LIMIT 300'), 'anfragen');
+        $labels = ['allgemein' => 'Allgemein', 'preis' => 'Preisanfrage', 'frage' => 'Frage zum Werk', 'warteliste' => 'Warteliste', 'aehnlich' => 'Ähnliches Werk'];
+        $list = $recs ? '<ul class="at-list">' . implode('', array_map(function ($r) use ($labels) {
+            $when = (new \DateTimeImmutable($r['_row']['eingang'] . ' UTC'))->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('d.m.Y, H:i');
+            return '<li class="at-card at-withdraw"><strong>' . e($labels[$r['anliegen']] ?? 'Anfrage') . ($r['werk'] !== '' ? ' · ' . e($r['werk']) : '') . '</strong>'
+                . '<span>' . e($r['name']) . ' · <a href="mailto:' . e($r['email']) . '">' . e($r['email']) . '</a>' . ($r['telefon'] !== '' ? ' · ' . e($r['telefon']) : '') . '</span>'
+                . '<span class="at-msg">' . nl2br(e($r['nachricht'])) . '</span>'
+                . '<span class="muted">Eingang ' . $when . ' Uhr · ' . e($r['_row']['ref']) . '</span></li>';
+        }, $recs)) . '</ul>' : '<p class="at-card">Bisher keine Anfragen.</p>';
+        $months = Config::get()['retention']['inquiryMonths'];
+        self::page('Anfragen', '<p class="at-back"><a href="/atelier">← Alle Werke</a></p>
+        <div class="at-top"><div><p class="eyebrow">Postfach</p><h1 class="display">Anfragen</h1></div></div>
+        <p class="muted">Anfragen aus dem Shop. Jede kommt zusätzlich per E-Mail. Die Angaben sind verschlüsselt gespeichert und werden nach ' . $months . ' Monaten automatisch gelöscht.</p>
+        ' . self::cryptoWarning($bad) . $list);
+    }
+
+    // ---------- Router ----------
+
+    public static function handle(string $path): never
+    {
+        $cfg = Config::get();
+        $method = Http::method();
+
+        if ($path === '/atelier/login' && $method === 'POST') {
+            if (!Http::sameOrigin()) {
+                http_response_code(403);
+                exit('Forbidden');
+            }
+            // Sperre nach zu vielen Fehlversuchen je IP (gilt auch für das richtige Passwort)
+            $ip = RateLimit::clientIp();
+            $win = $cfg['limits']['loginWindowMin'] * 60;
+            if (RateLimit::attempts('login', $ip, $win) >= $cfg['limits']['loginFailsPerIp']) {
+                self::loginPage("Zu viele Fehlversuche. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
+            }
+            if (AtelierAuth::checkPassword(Http::post('passwort', 500))) {
+                RateLimit::reset('login', $ip);
+                AtelierAuth::login();
+                Http::redirect('/atelier');
+            }
+            RateLimit::hit('login', $ip, PHP_INT_MAX, $win);
+            usleep(800000);
+            self::loginPage('Das Passwort stimmt nicht.');
+        }
+
+        if (!AtelierAuth::isLoggedIn()) {
+            if ($method !== 'GET') {
+                http_response_code(401);
+                header('Cache-Control: no-store');
+                exit('Bitte anmelden');
+            }
+            self::loginPage();
+        }
+        if ($method === 'POST' && (!Http::sameOrigin() || !AtelierAuth::checkCsrf(Http::post('csrf', 100)))) {
+            http_response_code(403);
+            exit('Forbidden');
+        }
+
+        try {
+            if ($path === '/atelier/logout' && $method === 'POST') {
+                AtelierAuth::logout();
+                Http::redirect('/atelier');
+            }
+            if ($path === '/atelier' && $method === 'GET') {
+                self::listPage(Http::query('ok'));
+            }
+            if ($path === '/atelier/neu' && $method === 'GET') {
+                self::editPage(null);
+            }
+            if ($path === '/atelier/widerrufe' && $method === 'GET') {
+                self::withdrawalsPage();
+            }
+            if ($path === '/atelier/anfragen' && $method === 'GET') {
+                self::inquiriesPage();
+            }
+            if (preg_match('#^/atelier/werk/(\d{1,10})$#', $path, $m) && $method === 'GET') {
+                $w = Catalog::byIdForAtelier((int) $m[1]);
+                if (!$w) {
+                    Http::redirect('/atelier');
+                }
+                self::editPage($w, '', Http::query('ok'));
+            }
+            if ($path === '/atelier/upload' && $method === 'POST') {
+                self::upload();
+            }
+            if ($path === '/atelier/speichern' && $method === 'POST') {
+                $r = self::save();
+                if (isset($r['error'])) {
+                    $id = (int) Http::post('id', 12);
+                    $prev = $id ? Catalog::byIdForAtelier($id) : null;
+                    self::editPage(self::draft($prev), $r['error']);
+                }
+                Http::redirect('/atelier/werk/' . $r['id'] . '?ok=' . rawurlencode($r['msg']));
+            }
+            if ($path === '/atelier/archivieren' && $method === 'POST') {
+                $id = (int) Http::post('id', 12);
+                if ($id) {
+                    Db::run('UPDATE werke SET aktiv = 0 WHERE id = ?', [$id]);
+                }
+                Http::redirect('/atelier?ok=' . rawurlencode('Werk aus dem Shop entfernt.'));
+            }
+            Http::redirect('/atelier');
+        } catch (\Throwable $e) {
+            Log::error('Atelier-Fehler: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            self::page('Fehler', '<section class="at-login"><h1 class="display">Das hat nicht geklappt</h1><p>Bitte noch einmal versuchen. Bleibt der Fehler, steht der Grund im Protokoll des Servers.</p><p><a class="btn" href="/atelier">Zurück</a></p></section>', 500);
+        }
+    }
+}
