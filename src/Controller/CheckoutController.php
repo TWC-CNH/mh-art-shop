@@ -229,7 +229,7 @@ final class CheckoutController
         $cfg = Config::get();
         $id = Http::query('session_id');
         $slug = mb_substr(Http::query('slug'), 0, 140);
-        $target = $slug !== '' ? $cfg['siteUrl'] . '/werk/' . rawurlencode($slug) . '?abgebrochen=1' : $cfg['siteUrl'] . '/';
+        $released = false;
         $s = self::stripe();
         // Nur wer den Bezahlvorgang gestartet hat (Cookie mit derselben Sitzung), kann ihn abbrechen.
         // Ein bekannt gewordener Abbruch-Link allein reicht nicht; die Reservierung läuft dann regulär ab.
@@ -247,7 +247,7 @@ final class CheckoutController
                 }
                 $werkId = (int) ($session->metadata['werk_id'] ?? 0);
                 if ($session->status !== 'complete' && $werkId) {
-                    Catalog::release($werkId, $id);
+                    $released = Catalog::release($werkId, $id);
                     Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$id]);
                 }
             } catch (\Throwable $e) {
@@ -255,7 +255,8 @@ final class CheckoutController
             }
         }
         Http::setCookie(self::SESSION_COOKIE, '', -1, '/', 'Lax');
-        Http::redirect($target);
+        // Den Hinweis „Reservierung aufgehoben, wieder frei“ nur zeigen, wenn das auch stimmt
+        Http::redirect($slug !== '' ? $cfg['siteUrl'] . '/werk/' . rawurlencode($slug) . ($released ? '?abgebrochen=1' : '') : $cfg['siteUrl'] . '/');
     }
 
     /** Stripe-Webhook: verkauft / wieder frei. Signatur wird geprüft, jedes Ereignis nur einmal verarbeitet. */

@@ -41,8 +41,21 @@ try {
         $a = Db::run('DELETE FROM anfragen WHERE eingang < (UTC_TIMESTAMP() - INTERVAL ? MONTH)', [$r['inquiryMonths']]);
         $w = Db::run('DELETE FROM widerrufe WHERE eingang < (UTC_TIMESTAMP() - INTERVAL ? YEAR)', [$r['withdrawalYears']]);
         $e = Db::run('DELETE FROM webhook_events WHERE verarbeitet < (UTC_TIMESTAMP() - INTERVAL 90 DAY)');
+        // Hochgeladene Fotos, die keinem Werk (mehr) gehören und älter als ein Tag sind, entfernen
+        $used = [];
+        foreach (Db::all("SELECT pfad AS p FROM werk_bilder WHERE pfad LIKE '/bilder/%' UNION SELECT thumb FROM werke WHERE thumb LIKE '/bilder/%'") as $r) {
+            if (preg_match('#^/bilder/([0-9a-f-]{36})#', (string) $r['p'], $m)) {
+                $used[$m[1]] = true;
+            }
+        }
+        $orphans = 0;
+        foreach (glob(Config::get()['uploadDir'] . '/*') ?: [] as $f) {
+            if (preg_match('#/([0-9a-f-]{36})(-sm|-xs)?\.(jpg|webp)$#', str_replace('\\', '/', $f), $m) && !isset($used[$m[1]]) && filemtime($f) < time() - 86400) {
+                @unlink($f) && $orphans++;
+            }
+        }
         Db::run('INSERT INTO merker (name, wert) VALUES (?, ?) ON DUPLICATE KEY UPDATE wert = VALUES(wert)', ['cron_taeglich', gmdate('Y-m-d')]);
-        Log::info("Cron täglich: $a Anfrage(n), $w Widerruf(e), $e Webhook-Einträge nach Ablauf der Frist gelöscht");
+        Log::info("Cron täglich: $a Anfrage(n), $w Widerruf(e), $e Webhook-Einträge nach Ablauf der Frist gelöscht, $orphans verwaiste Fotodatei(en) entfernt");
     }
     Db::run('INSERT INTO merker (name, wert) VALUES (?, ?) ON DUPLICATE KEY UPDATE wert = VALUES(wert)', ['cron_letzter_lauf', gmdate('Y-m-d H:i:s')]);
 } catch (\Throwable $e) {

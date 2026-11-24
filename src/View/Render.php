@@ -916,7 +916,8 @@ final class Render
     // ---------------------------------------------------------------- Danke / 404
 
     /** @param array|null $session Stripe-Checkout-Session als Array (wie von der API geliefert) */
-    public static function thanks(?array $session, ?array $work): string
+    /** $own = false: Aufruf ohne das Cookie des Käufers – Bestätigung ja, aber keine Conversion. */
+    public static function thanks(?array $session, ?array $work, bool $own = true): string
     {
         $cfg = cfg();
         $fullName = $session['customer_details']['name'] ?? null;
@@ -925,7 +926,7 @@ final class Render
         $total = $session['amount_total'] ?? null;
         $isPickup = ($session['shipping_cost']['amount_total'] ?? null) === 0 && $cfg['pickupEnabled'];
         $conversion = '';
-        if (self::t($cfg['googleAdsConversion']) && $session) {
+        if (self::t($cfg['googleAdsConversion']) && $session && $own) {
             $data = ['send_to' => $cfg['googleAdsConversion'], 'value' => self::jsonNum((self::t($total) ? $total : 0) / 100), 'currency' => 'EUR'];
             if (array_key_exists('id', $session) && $session['id'] !== null) {
                 $data['transaction_id'] = $session['id'];

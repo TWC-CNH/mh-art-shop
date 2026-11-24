@@ -100,8 +100,8 @@ HTML,
             exit('Method not allowed');
         }
         if (!Http::sameOrigin()) {
-            http_response_code(403);
-            exit('Forbidden');
+            Log::warn('Widerruf ohne gültige Herkunftsangabe abgelehnt (Origin/Referer fehlt oder fremd)');
+            Http::html(self::formPage([], "Ihr Browser hat das Formular ohne Herkunftsangabe gesendet, deshalb konnten wir es nicht annehmen. Bitte versuchen Sie es in einem anderen Browser erneut oder senden Sie Ihren Widerruf per E-Mail an {$cfg['contactEmail']}."), 403);
         }
         $g = fn (string $k, int $n) => mb_substr(trim(preg_replace('/\s+/u', ' ', Http::post($k, $n * 2)) ?? ''), 0, $n);
         $values = ['name' => $g('name', 120), 'vertrag' => $g('vertrag', 300), 'email' => mb_strtolower($g('email', 200))];

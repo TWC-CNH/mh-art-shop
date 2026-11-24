@@ -856,6 +856,53 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('zweite Zahlung eingegangen', $c->get('/atelier/werk/' . $w['id'])->body);
     }
 
+    /** Vierzehntes Review von PR #1 */
+    public function testVierzehntesReview(): void
+    {
+        $slug = Db::one("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 1")['slug'];
+
+        // Abbruch ohne passendes Cookie: kein „wieder frei“-Hinweis, denn es wurde nichts freigegeben
+        self::buy($slug);
+        $sid = self::werk($slug)['reserviert_session'];
+        $loc = (string) (new Client('198.51.100.120'))->get("/api/cancel?session_id=$sid&slug=$slug")->header('location');
+        $this->assertStringEndsWith("/werk/$slug", $loc);
+        $this->assertNotNull(self::werk($slug)['reserviert_session']);
+
+        // Danke-Seite im fremden Browser: Zahlungsstatus stimmt („bezahlt“), keine Conversion (auch nicht mit Google-Ads-Konfiguration)
+        Stack::updateStripeSession($sid, ['status' => 'complete', 'payment_status' => 'paid']);
+        $html = \App\View\Render::thanks(['status' => 'complete', 'payment_status' => 'paid', 'metadata' => []], null, false);
+        $this->assertStringNotContainsString('noch verarbeitet', $html);
+        putenv('GOOGLE_ADS_CONVERSION=AW-1/abc');
+        \App\Config::reset();
+        try {
+            $this->assertStringNotContainsString('mh-conversion', \App\View\Render::thanks(['id' => $sid, 'status' => 'complete', 'payment_status' => 'paid', 'amount_total' => 100, 'metadata' => []], null, false));
+            $this->assertStringContainsString('mh-conversion', \App\View\Render::thanks(['id' => $sid, 'status' => 'complete', 'payment_status' => 'paid', 'amount_total' => 100, 'metadata' => []], null, true));
+        } finally {
+            putenv('GOOGLE_ADS_CONVERSION=');
+            \App\Config::reset();
+        }
+
+        // Widerruf ohne Herkunftsangabe: Formular mit E-Mail-Weg statt nackter „Forbidden“-Seite
+        $w = (new Client('198.51.100.121'))->request('POST', '/vertrag-widerrufen', ['name' => 'A', 'vertrag' => 'B', 'email' => 'a@example.test']);
+        $this->assertSame(403, $w->status);
+        $this->assertStringContainsString('per E-Mail an', $w->body);
+
+        // Verwaiste Fotos (älter als ein Tag, keinem Werk zugeordnet) räumt der Cron weg, verwendete bleiben
+        $dir = Stack::env()['UPLOAD_DIR'];
+        $orphan = 'aaaaaaaa-0000-0000-0000-' . bin2hex(random_bytes(6));
+        $kept = 'bbbbbbbb-0000-0000-0000-' . bin2hex(random_bytes(6));
+        foreach (["$orphan.jpg", "$orphan-sm.webp", "$kept.jpg"] as $f) {
+            touch("$dir/$f", time() - 2 * 86400);
+        }
+        Db::run("INSERT INTO werk_bilder (werk_id, pfad, rolle) VALUES (?, '/bilder/$kept.jpg', 'detail')", [self::werk($slug)['id']]);
+        Db::run("DELETE FROM merker WHERE name = 'cron_taeglich'");
+        Stack::php('bin/cron.php');
+        $this->assertFileDoesNotExist("$dir/$orphan.jpg");
+        $this->assertFileDoesNotExist("$dir/$orphan-sm.webp");
+        $this->assertFileExists("$dir/$kept.jpg");
+        $this->assertFileExists("$dir/.htaccess");
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');
