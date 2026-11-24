@@ -18,5 +18,7 @@ CREATE TABLE IF NOT EXISTS atelier_benutzer (
 DELETE FROM atelier_sessions;
 
 ALTER TABLE atelier_sessions
-  ADD COLUMN benutzer_id INT UNSIGNED NOT NULL AFTER token_hash,
+  ADD COLUMN benutzer_id INT UNSIGNED NOT NULL AFTER token_hash;
+
+ALTER TABLE atelier_sessions
   ADD CONSTRAINT fk_sessions_benutzer FOREIGN KEY (benutzer_id) REFERENCES atelier_benutzer (id) ON DELETE CASCADE;

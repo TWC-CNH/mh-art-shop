@@ -51,6 +51,9 @@ if (($seg[1] ?? '') === 'checkout' && ($seg[2] ?? '') === 'sessions') {
         if ($unit <= 0) {
             $send(400, ['error' => ['type' => 'invalid_request_error', 'message' => 'Missing price_data']]);
         }
+        if (!empty($state['fail_create'])) {
+            $send(500, ['error' => ['type' => 'api_error', 'message' => 'Simulierter Ausfall']]);
+        }
         if (!empty($state['delay_create'])) {
             // Zustand freigeben, damit der Test währenddessen weiterarbeiten kann
             $delay = (float) $state['delay_create'];

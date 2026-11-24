@@ -20,7 +20,7 @@ use Stripe\StripeClient;
  */
 final class CheckoutController
 {
-    private const SESSION_COOKIE = 'mh_co';
+    public const SESSION_COOKIE = 'mh_co';
 
     public static function stripe(): ?StripeClient
     {
@@ -40,7 +40,7 @@ final class CheckoutController
     {
         if ($sessionId !== '') {
             // Merkt sich die eigene Sitzung, damit man nach "Zurück" im Browser weiterbezahlen kann.
-            Http::setCookie(self::SESSION_COOKIE, $sessionId, 3600, '/api', 'Lax');
+            Http::setCookie(self::SESSION_COOKIE, $sessionId, 3600, '/', 'Lax');
         }
         if (Http::wantsJson()) {
             Http::jsonOut($error !== '' ? ['error' => $error] : ['url' => $url], $error !== '' ? ($status === 303 ? 400 : $status) : 200);
@@ -104,6 +104,7 @@ final class CheckoutController
             Catalog::release($work['id'], $token);
             self::reply($back('zuviele'), 'zuviele', 429);
         }
+        $slot = $limit['id'] ?? null;
 
         $session = null;
         try {
@@ -117,10 +118,12 @@ final class CheckoutController
                     Log::error('Sitzung für vergebenes Werk nicht geschlossen: ' . $e2->getMessage());
                 }
                 Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ?', [$session->id]);
+                RateLimit::undo($slot);
                 self::reply($back('vergeben'), 'vergeben', 409);
             }
         } catch (\Throwable $e) {
             Log::error('Checkout-Fehler: ' . $e->getMessage());
+            RateLimit::undo($slot); // kein Bezahlvorgang entstanden: zählt nicht gegen die Begrenzung
             // Aufräumen: Reservierung freigeben (Token oder schon zugeordnete Sitzung) und eine bereits
             // angelegte Stripe-Sitzung schließen, damit sie nicht ohne Bestellung bezahlt werden kann.
             Catalog::release($work['id'], $token);
@@ -233,7 +236,7 @@ final class CheckoutController
                 Log::warn('Abbruch konnte nicht verarbeitet werden: ' . $e->getMessage());
             }
         }
-        Http::setCookie(self::SESSION_COOKIE, '', -1, '/api', 'Lax');
+        Http::setCookie(self::SESSION_COOKIE, '', -1, '/', 'Lax');
         Http::redirect($target);
     }
 
@@ -291,7 +294,8 @@ final class CheckoutController
                                 Log::warn("Offene Sitzung {$r['expire']} nach Verkauf nicht geschlossen: " . $e->getMessage());
                             }
                         }
-                        $paid = ($obj->payment_status ?? '') === 'paid';
+                        // 'no_payment_required': z. B. Gutschein über den vollen Betrag – ebenfalls erledigt
+                        $paid = in_array($obj->payment_status ?? '', ['paid', 'no_payment_required'], true);
                         Db::run('UPDATE bestellungen SET status = IF(status = \'bezahlt\', status, ?), betrag_cent = COALESCE(?, betrag_cent), bezahlt_am = IF(?, UTC_TIMESTAMP(), bezahlt_am) WHERE stripe_session_id = ?', [$paid ? 'bezahlt' : 'offen', $obj->amount_total ?? null, $paid ? 1 : 0, $sid]);
                     }
                     break;

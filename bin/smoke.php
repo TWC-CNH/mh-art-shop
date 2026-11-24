@@ -35,6 +35,9 @@ try {
     $n = (int) Db::one('SELECT COUNT(*) AS n FROM werke WHERE aktiv = 1')['n'];
     $check("Werke vorhanden ($n)", $n > 0, 'php bin/import-catalog.php');
     $cron = Db::one('SELECT wert FROM merker WHERE name = ?', ['cron_letzter_lauf']);
+    if ($cron) {
+        $check('Cron läuft (letzter Lauf vor höchstens 15 Minuten)', strtotime($cron['wert'] . ' UTC') > time() - 900, 'Cronjob in konsoleH und RUN_DIR prüfen; Fehler stehen im Log');
+    }
     echo '  info  letzter Cron-Lauf: ' . ($cron['wert'] ?? 'noch nie') . " (UTC)\n";
 } catch (\Throwable $e) {
     $check('Datenbank erreichbar', false, $e->getMessage());
@@ -50,6 +53,8 @@ try {
 } catch (\Throwable $e) {
     $check('Atelier-Benutzer mit 2FA vorhanden', false, 'php bin/migrate.php');
 }
+$runDir = \App\Env::get('RUN_DIR', dirname(__DIR__) . '/storage/run');
+$check("RUN_DIR beschreibbar ($runDir)", (is_dir($runDir) || @mkdir($runDir, 0750, true)) && is_writable($runDir), 'Ordner anlegen: mkdir -p ~/run');
 $check('Upload-Ordner beschreibbar', is_dir($cfg['uploadDir']) && is_writable($cfg['uploadDir']), $cfg['uploadDir']);
 $check('Schutz im Upload-Ordner (.htaccess)', is_file($cfg['uploadDir'] . '/.htaccess'));
 $check('STRIPE_SECRET_KEY gesetzt', $cfg['stripeSecretKey'] !== '', 'ohne Schlüssel ist Kaufen gesperrt');

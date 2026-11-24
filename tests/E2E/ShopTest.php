@@ -136,7 +136,8 @@ final class ShopTest extends TestCase
 
     public function testBezahlungMarkiertVerkauftUndIstIdempotent(): void
     {
-        $this->assertSame(200, self::buy('cool')->status);
+        $payer = new Client('198.51.100.88');
+        $this->assertSame(200, self::buy('cool', $payer)->status);
         $sid = self::werk('cool')['reserviert_session'];
         $session = Stack::stripeSessions()[$sid];
         unset($session['params']);
@@ -162,10 +163,16 @@ final class ShopTest extends TestCase
 
         // Danke-Seite liest die Sitzung bei Stripe
         Stack::updateStripeSession($sid, ['status' => 'complete', 'customer_details' => ['name' => 'Erika Muster', 'email' => 'erika@example.test']]);
-        $thanks = (new Client())->get("/danke?session_id=$sid");
+        $thanks = $payer->get("/danke?session_id=$sid");
         $this->assertSame(200, $thanks->status);
         $this->assertStringContainsString('Erika', $thanks->body);
+        $this->assertStringContainsString('erika@example.test', $thanks->body);
         $this->assertSame('no-store', $thanks->header('cache-control'));
+        // geteilter Link ohne das Cookie des Käufers: Danke ja, aber keine persönlichen Daten
+        $shared = (new Client())->get("/danke?session_id=$sid");
+        $this->assertSame(200, $shared->status);
+        $this->assertStringNotContainsString('Erika', $shared->body);
+        $this->assertStringNotContainsString('erika@example.test', $shared->body);
     }
 
     public function testAblaufUndGescheiterteZahlungGebenFrei(): void
@@ -501,7 +508,7 @@ final class ShopTest extends TestCase
         imagejpeg(imagecreatetruecolor(4500, 8), $huge, 10);
         $r = $c->post('/atelier/upload', ['full' => new \CURLFile($huge), 'sm' => new \CURLFile($huge), 'xs' => new \CURLFile($huge), 'csrf' => $csrf]);
         $this->assertSame(415, $r->status);
-        $this->assertStringContainsString('4000', $r->body);
+        $this->assertStringContainsString('2400 px', $r->body);
 
         // Neues Werk direkt als „Verkauft“ bekommt ein Verkaufsdatum
         $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => '', 'titel' => 'Schon verkauft', 'masse' => '50 x 40 cm', 'preis' => '900', 'status' => 'sold', 'sichtbar' => 'ja', 'bilder' => '[]']);
@@ -615,6 +622,69 @@ final class ShopTest extends TestCase
         }
         $this->assertSame(429, $ip->post('/atelier/login', ['benutzer' => $user[0], 'passwort' => 'falsch', 'code' => '000000'])->status);
         $this->assertSame(303, (new Client('198.51.100.191'))->post('/atelier/login', Stack::credentials($user))->status);
+    }
+
+    /** Achtes Review von PR #1 */
+    public function testAchtesReview(): void
+    {
+        $free = fn (int $n) => array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT $n"), 'slug');
+        $stripeCfg = fn (array $c) => file_get_contents('http://127.0.0.1:' . Stack::STRIPE_PORT . '/__test/config', false, stream_context_create(['http' => ['method' => 'POST', 'header' => 'Content-Type: application/json', 'content' => json_encode($c)]]));
+        [$c, $csrf] = self::login('192.0.2.120');
+        [$a, $b] = $free(2);
+
+        // Ausblenden während eines Bezahlvorgangs beendet ihn
+        self::buy($a);
+        $wa = self::werk($a);
+        $r = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $wa['id'], 'titel' => $wa['titel'], 'masse' => $wa['masse'], 'preis' => (string) ($wa['preis_cent'] / 100), 'status' => 'available', 'status_geladen' => 'reserved', 'sichtbar' => 'nein', 'bilder' => '[]']);
+        $this->assertStringEndsWith('?ok=bezahlvorgang-beendet', $r->header('location'));
+        $this->assertSame('expired', Stack::stripeSessions()[$wa['reserviert_session']]['status']);
+        $this->assertNull(self::werk($a)['reserviert_session']);
+
+        // Preisänderung während eines Bezahlvorgangs beendet ihn
+        self::buy($b);
+        $wb = self::werk($b);
+        $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $wb['id'], 'titel' => $wb['titel'], 'masse' => $wb['masse'], 'preis' => (string) ($wb['preis_cent'] / 100 + 100), 'status' => 'available', 'status_geladen' => 'reserved', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertSame('expired', Stack::stripeSessions()[$wb['reserviert_session']]['status']);
+        // nur Text geändert: Bezahlvorgang läuft weiter
+        self::buy($b);
+        $wb2 = self::werk($b);
+        $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $wb2['id'], 'titel' => $wb2['titel'] . ' ', 'masse' => $wb2['masse'], 'preis' => (string) ($wb2['preis_cent'] / 100), 'status' => 'available', 'status_geladen' => 'reserved', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertSame('open', Stack::stripeSessions()[$wb2['reserviert_session']]['status']);
+
+        // Stripe-Ausfall verbraucht keine Checkout-Plätze
+        [$d] = $free(1);
+        $ip = new Client('203.0.113.140');
+        $stripeCfg(['fail_create' => true]);
+        try {
+            for ($i = 0; $i < 4; $i++) {
+                $this->assertSame(500, self::buy($d, $ip)->status);
+            }
+        } finally {
+            $stripeCfg(['fail_create' => false]);
+        }
+        $ok = self::buy($d, $ip);
+        $this->assertSame(200, $ok->status, 'nach dem Ausfall nicht „zuviele“');
+
+        // Gutschein über den vollen Betrag: Bestellung gilt als bezahlt
+        $sid = self::werk($d)['reserviert_session'];
+        Stack::webhook('checkout.session.completed', ['id' => $sid, 'status' => 'complete', 'payment_status' => 'no_payment_required', 'amount_total' => 0, 'metadata' => ['werk_id' => (string) self::werk($d)['id']]]);
+        $this->assertSame('bezahlt', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$sid])['status']);
+
+        // Zu große Fotos werden vor dem Entpacken abgelehnt
+        $big = Stack::$tmp . '/gross.jpg';
+        imagejpeg(imagecreatetruecolor(2500, 10), $big, 10);
+        $up = $c->post('/atelier/upload', ['full' => new \CURLFile($big), 'sm' => new \CURLFile($big), 'xs' => new \CURLFile($big), 'csrf' => $csrf]);
+        $this->assertSame(415, $up->status);
+
+        // Cron ohne nutzbares RUN_DIR bricht mit Fehler ab statt still
+        $notADir = Stack::$tmp . '/kein-ordner';
+        file_put_contents($notADir, 'x');
+        try {
+            Stack::php('bin/cron.php', [], ['RUN_DIR' => $notADir]);
+            $this->fail('Cron hätte mit Fehler enden müssen');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Sperrdatei', $e->getMessage());
+        }
     }
 
     public function testWiderrufWirdVerschluesseltGespeichert(): void

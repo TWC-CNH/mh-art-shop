@@ -16,9 +16,15 @@ use App\RateLimit;
 
 $runDir = Env::get('RUN_DIR', dirname(__DIR__) . '/storage/run');
 @mkdir($runDir, 0750, true);
-$lock = fopen("$runDir/cron.lock", 'c');
-if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
-    exit(0); // läuft noch
+$lock = @fopen("$runDir/cron.lock", 'c');
+if (!$lock) {
+    // Nicht stillschweigend beenden: sonst laufen Löschfristen und Aufräumen nie
+    Log::error("Cron: Sperrdatei $runDir/cron.lock nicht anlegbar (RUN_DIR prüfen)");
+    fwrite(STDERR, "Cron: Sperrdatei $runDir/cron.lock nicht anlegbar (RUN_DIR prüfen)\n");
+    exit(1);
+}
+if (!flock($lock, LOCK_EX | LOCK_NB)) {
+    exit(0); // ein anderer Lauf ist noch nicht fertig
 }
 
 try {

@@ -50,6 +50,11 @@ final class ShopController
             $slug = $session['metadata']['slug'] ?? '';
             Http::redirect(is_string($slug) && $slug !== '' && $work ? '/werk/' . rawurlencode($slug) : '/');
         }
+        // Name, E-Mail und Betrag nur für den, der den Kauf gestartet hat (Cookie); geteilte Links zeigen nur „Danke“
+        $mine = Http::cookie(CheckoutController::SESSION_COOKIE);
+        if ($mine === '' || !hash_equals($mine, (string) $session['id'])) {
+            $session = null; // auch keine Conversion für fremde Aufrufe
+        }
         Http::html(Render::thanks($session, $work));
     }
 

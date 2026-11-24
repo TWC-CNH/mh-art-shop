@@ -54,6 +54,7 @@ final class AtelierController
             'gespeichert' => 'Gespeichert. Der Shop zeigt die Änderung sofort.',
             'inzwischen-verkauft' => 'Gespeichert. Achtung: Das Werk wurde inzwischen verkauft und bleibt „Verkauft“.',
             'entfernt' => 'Werk aus dem Shop entfernt.',
+            'bezahlvorgang-beendet' => 'Gespeichert. Ein laufender Bezahlvorgang für dieses Werk wurde beendet, weil sich Preis, Versand oder Sichtbarkeit geändert haben.',
             'nicht-mehr-da' => 'Das Werk wurde inzwischen aus dem Shop entfernt. Die Änderungen wurden nicht gespeichert.',
             'notfall' => "Mit Notfall-Code angemeldet. Noch $n Notfall-Code(s) übrig. Bitte die Authenticator-App neu einrichten lassen (bin/atelier-user.php 2fa).",
             default => '',
@@ -354,11 +355,22 @@ final class AtelierController
                     $data['verkauft_am'] = gmdate('Y-m-d');
                 }
                 $cols = array_keys($data);
-                Db::run('INSERT INTO werke (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($data));
+                // Legt jemand gleichzeitig ein Werk mit gleichem Titel an, nächste freie Adresse nehmen
+                for ($try = 0; ; $try++) {
+                    try {
+                        Db::run('INSERT INTO werke (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($data));
+                        break;
+                    } catch (\PDOException $e) {
+                        if ((int) ($e->errorInfo[1] ?? 0) !== 1062 || $try >= 5) {
+                            throw $e;
+                        }
+                        $data['slug'] = Catalog::uniqueSlug($data['titel']);
+                    }
+                }
                 $id = Db::lastId();
                 $msg = 'angelegt';
             } else {
-                $prev = Db::one('SELECT status, masse, format, thumb, reserviert_session, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
+                $prev = Db::one('SELECT status, masse, format, thumb, sichtbar, preis_cent, versand_cent, reserviert_session, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
                 if (!$prev) {
                     return ['error' => 'Das Werk gibt es nicht mehr.', 'gone' => true];
                 }
@@ -384,6 +396,18 @@ final class AtelierController
                     Db::run('UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL, doppelverkauf_session = NULL WHERE id = ?', [$id]);
                 } elseif (!$statusChanged && $prev['status'] === 'sold' && $status !== 'sold') {
                     $msg = 'inzwischen-verkauft';
+                }
+                // Läuft gerade ein Bezahlvorgang und wird das Werk ausgeblendet oder ändern sich Preis/Versand,
+                // diesen Bezahlvorgang beenden: sonst würde ein ausgeblendetes Werk oder zum alten Preis verkauft.
+                $int = fn ($v) => $v === null ? null : (int) $v;
+                $runningSession = (int) $prev['reserviert'] && str_starts_with((string) $prev['reserviert_session'], 'cs_') ? $prev['reserviert_session'] : null;
+                $changedTerms = ((int) $prev['sichtbar'] === 1 && $data['sichtbar'] === 0)
+                    || $int($prev['preis_cent']) !== $int($data['preis_cent'])
+                    || $int($prev['versand_cent']) !== $int($data['versand_cent']);
+                if ($expire === null && $runningSession !== null && $changedTerms) {
+                    Db::run('UPDATE werke SET reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND reserviert_session = ?', [$id, $runningSession]);
+                    $expire = $runningSession;
+                    $msg = 'bezahlvorgang-beendet';
                 }
             }
             Db::run('DELETE FROM werk_bilder WHERE werk_id = ?', [$id]);
@@ -429,6 +453,15 @@ final class AtelierController
             Http::jsonOut(['error' => 'Upload-Ordner fehlt'], 500);
         }
         $id = bin2hex(random_bytes(16));
+        // Bricht PHP mittendrin ab (z. B. Speichergrenze), halb geschriebene Dateien trotzdem entfernen
+        $done = false;
+        register_shutdown_function(function () use (&$done, $dir, &$id) {
+            if (!$done) {
+                foreach (glob("$dir/$id*") ?: [] as $f) {
+                    @unlink($f);
+                }
+            }
+        });
         $id = substr($id, 0, 8) . '-' . substr($id, 8, 4) . '-' . substr($id, 12, 4) . '-' . substr($id, 16, 4) . '-' . substr($id, 20);
         $written = [];
         foreach (['' => 'full', '-sm' => 'sm', '-xs' => 'xs'] as $suffix => $field) {
@@ -448,13 +481,14 @@ final class AtelierController
             }
             // Abmessungen aus dem Dateikopf prüfen, bevor das Bild im Speicher entpackt wird
             $dim = @getimagesizefromstring($bytes);
-            if (!$dim || $dim[0] < 1 || $dim[1] < 1 || $dim[0] > 4000 || $dim[1] > 4000) {
+            // Der Browser verkleinert auf höchstens 1600 px; 2400 px lassen Spielraum und bleiben speicherschonend (~23 MB)
+            if (!$dim || $dim[0] < 1 || $dim[1] < 1 || $dim[0] > 2400 || $dim[1] > 2400) {
                 self::cleanup($written);
-                Http::jsonOut(['error' => 'Foto nicht lesbar oder größer als 4000 px'], 415);
+                Http::jsonOut(['error' => 'Foto nicht lesbar oder größer als 2400 px'], 415);
             }
             // Neu speichern: entfernt Metadaten (z. B. GPS) und alles, was kein Bild ist
             $img = @imagecreatefromstring($bytes);
-            if (!$img || imagesx($img) > 4000 || imagesy($img) > 4000) {
+            if (!$img) {
                 self::cleanup($written);
                 Http::jsonOut(['error' => 'Foto nicht lesbar'], 415);
             }
@@ -474,6 +508,7 @@ final class AtelierController
                 @unlink($webp);
             }
         }
+        $done = true;
         if (!empty($webpFailed)) {
             self::cleanup($webps ?? []); // WebP alle oder keine – sonst bliebe bei manchen Breiten das Bild leer
         }
