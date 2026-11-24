@@ -5,8 +5,8 @@ DirectoryIndex index.php
 <IfModule mod_rewrite.c>
   RewriteEngine On
   # HTTPS erzwingen
+  # Kein Proxy vor Apache: X-Forwarded-Proto käme vom Besucher und darf den HTTPS-Zwang nicht aushebeln
   RewriteCond %{HTTPS} !=on
-  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
   # www auf die Hauptdomain
   RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]

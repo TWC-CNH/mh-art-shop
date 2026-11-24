@@ -1,6 +1,7 @@
 <?php
 // Übernimmt die Werke aus data/catalog.json in die Datenbank (einmalig beim Einrichten).
-// Bereits vorhandene Werke (gleicher slug) bleiben unverändert, außer mit --update.
+// Bereits vorhandene Werke (gleicher slug) bleiben unverändert, außer mit --update (Texte, Preise, Fotos;
+// der Verkaufsstatus wird dabei nie verändert).
 // Aufruf: php bin/import-catalog.php [--update]
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
@@ -39,7 +40,10 @@ foreach ($data as $d) {
         }
         if ($prev) {
             $id = (int) $prev['id'];
-            Db::run('UPDATE werke SET ' . implode(', ', array_map(fn ($c) => "$c = ?", array_keys($row))) . ' WHERE id = ?', [...array_values($row), $id]);
+            // Verkaufsstatus gehört dem Shop (Webhook, Atelier), nicht der Katalogdatei: nie überschreiben
+            $fields = $row;
+            unset($fields['status']);
+            Db::run('UPDATE werke SET ' . implode(', ', array_map(fn ($c) => "$c = ?", array_keys($fields))) . ' WHERE id = ?', [...array_values($fields), $id]);
             Db::run('DELETE FROM werk_bilder WHERE werk_id = ?', [$id]);
             $upd++;
         } else {

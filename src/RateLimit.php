@@ -78,10 +78,22 @@ final class RateLimit
                 $t = $first['t'] ? strtotime($first['t'] . ' UTC') : time();
                 return ['ok' => false, 'retryAfter' => max(1, $t + $windowSec - time())];
             }
-            return ['ok' => true, 'retryAfter' => 0];
+            return ['ok' => true, 'retryAfter' => 0, 'id' => $mine];
         } catch (\Throwable $e) {
             Log::warn('Rate-Limit nicht speicherbar: ' . $e->getMessage());
             return ['ok' => true, 'retryAfter' => 0];
+        }
+    }
+
+    /** Einen einzelnen gezählten Versuch zurücknehmen (z. B. wenn die Aktion doch nicht stattfand). */
+    public static function undo(?int $entryId): void
+    {
+        if ($entryId) {
+            try {
+                Db::run('DELETE FROM rate_limits WHERE id = ?', [$entryId]);
+            } catch (\Throwable $e) {
+                Log::warn('Rate-Limit nicht zurücknehmbar: ' . $e->getMessage());
+            }
         }
     }
 

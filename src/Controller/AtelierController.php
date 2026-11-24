@@ -564,9 +564,15 @@ final class AtelierController
             $name = mb_strtolower(trim(Http::post('benutzer', 60)));
             // Viele Fehlversuche für diesen Benutzernamen (verteilt über viele IPs): bremsen, aber nicht sperren –
             // sonst könnte jeder den echten Zugang aussperren. Mit richtigem Passwort UND Code klappt es immer.
-            // (keine Pause per sleep(): sie würde PHP-Prozesse blockieren; das Passwort-Hashing bremst ohnehin)
+            // Steht ein Benutzername unter Beschuss (viele Fehlversuche von vielen IPs), darf jede IP für diesen
+            // Benutzer nur noch 3 Versuche je Zeitfenster machen. Wer beim ersten Mal Passwort und Code richtig hat,
+            // kommt weiter rein (kein Aussperren); ein verteilter Angriff bekommt aber deutlich weniger Versuche.
+            // Den Rest schützt der Zwei-Faktor-Code.
             if (RateLimit::attempts('login-user', $name, $win) >= $cfg['limits']['loginFailsPerIp'] * 2) {
                 Log::warn('Atelier: viele Fehlversuche für einen Benutzernamen');
+                if (!RateLimit::hit('login-user-ip', $name . '|' . $ip, 3, $win)['ok']) {
+                    self::loginPage("Zu viele Fehlversuche. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
+                }
             }
             $code = trim(Http::post('code', 10)) !== '' ? Http::post('code', 10) : Http::post('notfallcode', 20);
             $user = AtelierAuth::attempt($name, Http::post('passwort', 500), $code);

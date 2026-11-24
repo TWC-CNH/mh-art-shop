@@ -215,7 +215,10 @@ final class CheckoutController
         $slug = mb_substr(Http::query('slug'), 0, 140);
         $target = $slug !== '' ? $cfg['siteUrl'] . '/werk/' . rawurlencode($slug) . '?abgebrochen=1' : $cfg['siteUrl'] . '/';
         $s = self::stripe();
-        if ($s && preg_match('/^cs_[A-Za-z0-9_]+$/', $id)) {
+        // Nur wer den Bezahlvorgang gestartet hat (Cookie mit derselben Sitzung), kann ihn abbrechen.
+        // Ein bekannt gewordener Abbruch-Link allein reicht nicht; die Reservierung läuft dann regulär ab.
+        $mine = Http::cookie(self::SESSION_COOKIE);
+        if ($s && preg_match('/^cs_[A-Za-z0-9_]+$/', $id) && $mine !== '' && hash_equals($mine, $id)) {
             try {
                 $session = $s->checkout->sessions->retrieve($id);
                 if ($session->status === 'open') {

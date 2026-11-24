@@ -113,10 +113,16 @@ final class ShopTest extends TestCase
     {
         self::buy('nacht');
         $own = self::werk('nacht')['reserviert_session'];
-        self::buy('blick');
+        $blickBuyer = new Client('198.51.100.77');
+        self::buy('blick', $blickBuyer);
         $other = self::werk('blick')['reserviert_session'];
-        // Abbruch-Link der Sitzung von "blick", aber mit slug=nacht: "nacht" bleibt reserviert
-        (new Client())->get("/api/cancel?session_id=$other&slug=nacht");
+        // Abbruch-Link ohne das Cookie des Käufers (z. B. Link bekannt geworden): nichts wird freigegeben
+        $r = (new Client())->get("/api/cancel?session_id=$other&slug=blick");
+        $this->assertSame(303, $r->status);
+        $this->assertSame($other, self::werk('blick')['reserviert_session']);
+        $this->assertSame('open', Stack::stripeSessions()[$other]['status']);
+        // Käufer von „blick“ bricht ab, aber mit slug=nacht: nur seine eigene Reservierung wird frei
+        $blickBuyer->get("/api/cancel?session_id=$other&slug=nacht");
         $this->assertSame($own, self::werk('nacht')['reserviert_session']);
         $this->assertNull(self::werk('blick')['reserviert_session']);
     }
@@ -586,6 +592,29 @@ final class ShopTest extends TestCase
         $this->assertSame('abgelaufen', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$last['id']])['status']);
         $this->assertNull(self::werk($w['slug'])['reserviert_session']);
         Db::run('UPDATE werke SET aktiv = 1 WHERE id = ?', [$w['id']]);
+    }
+
+    /** Siebtes Review von PR #1 */
+    public function testSiebtesReview(): void
+    {
+        // Import mit --update setzt verkaufte Werke nicht wieder auf verfügbar
+        Db::run("UPDATE werke SET status = 'sold', verkauft_session = 'cs_test_import' WHERE slug = 'unsere-zeit'");
+        Stack::php('bin/import-catalog.php', ['--update']);
+        $w = self::werk('unsere-zeit');
+        $this->assertSame('sold', $w['status']);
+        $this->assertSame('cs_test_import', $w['verkauft_session']);
+
+        // Benutzer unter Beschuss: jede IP nur noch 3 Versuche für ihn, richtige Anmeldung von neuer IP klappt
+        $user = Stack::createUser();
+        for ($i = 0; $i < 6; $i++) {
+            (new Client('198.51.100.' . (180 + $i)))->post('/atelier/login', ['benutzer' => $user[0], 'passwort' => 'falsch', 'code' => '000000']);
+        }
+        $ip = new Client('198.51.100.190');
+        for ($i = 0; $i < 3; $i++) {
+            $this->assertSame(401, $ip->post('/atelier/login', ['benutzer' => $user[0], 'passwort' => 'falsch', 'code' => '000000'])->status);
+        }
+        $this->assertSame(429, $ip->post('/atelier/login', ['benutzer' => $user[0], 'passwort' => 'falsch', 'code' => '000000'])->status);
+        $this->assertSame(303, (new Client('198.51.100.191'))->post('/atelier/login', Stack::credentials($user))->status);
     }
 
     public function testWiderrufWirdVerschluesseltGespeichert(): void

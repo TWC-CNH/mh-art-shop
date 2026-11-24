@@ -175,6 +175,10 @@ final class Catalog
      */
     public static function markAvailable(int $id, string $sessionId): bool
     {
+        // War es die als Doppelzahlung vermerkte Sitzung, ist der Erstattungshinweis hinfällig
+        if (Db::run('UPDATE werke SET doppelverkauf_session = NULL WHERE id = ? AND doppelverkauf_session = ?', [$id, $sessionId]) === 1) {
+            return false;
+        }
         // Gab es eine zweite Zahlung für das Werk, bleibt es verkauft – jetzt an diese zweite Sitzung.
         if (Db::run(
             'UPDATE werke SET verkauft_session = doppelverkauf_session, doppelverkauf_session = NULL

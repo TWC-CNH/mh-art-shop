@@ -18,8 +18,19 @@ foreach ($files as $f) {
         continue;
     }
     $sql = preg_replace('/^\s*--.*$/m', '', (string) file_get_contents($f));
+    // Anweisungen einzeln (DDL schreibt in MySQL/MariaDB ohnehin sofort fest). Wurde eine Migration mittendrin
+    // abgebrochen, überspringt ein erneuter Lauf, was schon da ist, statt dauerhaft festzuhängen.
+    // Hinweis für neue Migrationen: kein „;“ innerhalb von Texten verwenden (es wird an „;“ getrennt).
+    $already = [1050, 1060, 1061, 1068, 1091, 1826]; // Tabelle/Spalte/Index/Primärschlüssel/Fremdschlüssel schon vorhanden bzw. schon entfernt
     foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmt) {
-        $pdo->exec($stmt);
+        try {
+            $pdo->exec($stmt);
+        } catch (PDOException $e) {
+            if (!in_array((int) ($e->errorInfo[1] ?? 0), $already, true)) {
+                throw $e;
+            }
+            echo "  übersprungen (schon vorhanden): " . substr(preg_replace('/\s+/', ' ', $stmt), 0, 70) . "…\n";
+        }
     }
     Db::run('INSERT INTO schema_migrations (version) VALUES (?)', [$v]);
     echo "ausgeführt: $v\n";
