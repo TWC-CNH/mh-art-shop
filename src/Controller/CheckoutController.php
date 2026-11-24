@@ -113,8 +113,11 @@ final class CheckoutController
                 if ($open->status === 'expired') {
                     // eigene Sitzung ist bei Stripe abgelaufen (Webhook noch unterwegs): Reservierung freigeben, neu kaufen
                     Catalog::release((int) $row['id'], (string) $row['reserviert_session']);
+                    Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [(string) $row['reserviert_session']]);
                 }
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                Log::warn('Eigene Sitzung nicht abrufbar: ' . $e->getMessage());
+                self::reply($back('fehler'), 'fehler', 503); // nicht „vergeben“ – es ist ja die eigene Reservierung
             }
         }
 

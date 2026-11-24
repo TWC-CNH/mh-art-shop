@@ -75,8 +75,12 @@ final class InquiryController
         // Das Formular schickt „Titel (slug)“; den slug am Ende herauslösen (oder nur slug)
         $werkRaw = trim(Http::post('werk', 600)); // ungekürzt, damit auch lange slugs vollständig sind
         $slug = preg_match('/(?:^|\()([a-z0-9-]{1,140})\)?\s*$/', $werkRaw, $sm) ? $sm[1] : null;
-        if ($slug !== null && !Db::one('SELECT 1 FROM werke WHERE slug = ?', [$slug])) {
-            $slug = null;
+        try {
+            if ($slug !== null && !Db::one('SELECT 1 FROM werke WHERE slug = ?', [$slug])) {
+                $slug = null;
+            }
+        } catch (\Throwable) {
+            $slug = null; // Datenbank nicht erreichbar: Anfrage trotzdem per Mail weitergeben
         }
         $stored = true;
         try {

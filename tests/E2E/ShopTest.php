@@ -1014,6 +1014,62 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('nicht mehr vorhanden', $missing->body);
     }
 
+    /** Achtzehntes Review von PR #1 */
+    public function testAchtzehntesReview(): void
+    {
+        $free = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 3"), 'slug');
+        [$a, $b, $d] = $free;
+        $stripeCfg = fn (array $c) => file_get_contents('http://127.0.0.1:' . Stack::STRIPE_PORT . '/__test/config', false, stream_context_create(['http' => ['method' => 'POST', 'header' => 'Content-Type: application/json', 'content' => json_encode($c)]]));
+        [$c, $csrf] = self::login('192.0.2.190');
+
+        // Entfernen, während ein Bezahlvorgang läuft und Stripe nicht schließen kann: Werk bleibt im Shop
+        self::buy($a);
+        $wa = self::werk($a);
+        $stripeCfg(['fail_expire' => true]);
+        try {
+            $r = $c->post('/atelier/archivieren', ['csrf' => $csrf, 'id' => $wa['id']]);
+        } finally {
+            $stripeCfg(['fail_expire' => false]);
+        }
+        $this->assertStringEndsWith("/atelier/werk/{$wa['id']}?ok=entfernen-bezahlvorgang", (string) $r->header('location'));
+        $this->assertSame(1, (int) self::werk($a)['aktiv']);
+
+        // Von Hand „Verkauft“, Stripe kann nicht schließen: Warnung statt „Gespeichert“
+        self::buy($b);
+        $wb = self::werk($b);
+        $stripeCfg(['fail_expire' => true]);
+        try {
+            $r = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $wb['id'], 'titel' => $wb['titel'], 'masse' => $wb['masse'], 'preis' => (string) ($wb['preis_cent'] / 100), 'status' => 'sold', 'status_geladen' => 'reserved', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        } finally {
+            $stripeCfg(['fail_expire' => false]);
+        }
+        $this->assertStringEndsWith('?ok=verkauft-zahlung-laeuft', (string) $r->header('location'));
+
+        // Eigene Reservierung, Stripe kurz nicht erreichbar: „fehler“ (erneut versuchen) statt „vergeben“
+        $buyer = new Client('198.51.100.160');
+        self::buy($d, $buyer);
+        $stripeCfg(['fail_retrieve' => true]);
+        try {
+            $again = self::buy($d, $buyer);
+        } finally {
+            $stripeCfg(['fail_retrieve' => false]);
+        }
+        $this->assertSame(503, $again->status);
+        $this->assertSame('fehler', $again->json()['error'] ?? null);
+
+        // Datei über upload_max_filesize: „zu groß“ statt „Datei fehlt“
+        $f = Stack::$tmp . '/ueber-limit.jpg';
+        file_put_contents($f, "\xFF\xD8" . random_bytes(1200 * 1024));
+        $small = Stack::$tmp . '/klein.jpg';
+        imagejpeg(imagecreatetruecolor(20, 20), $small);
+        $up = $c->post('/atelier/upload', ['full' => new \CURLFile($f), 'sm' => new \CURLFile($small), 'xs' => new \CURLFile($small), 'csrf' => $csrf]);
+        $this->assertSame(413, $up->status);
+        $this->assertStringContainsString('zu groß', $up->json()['error'] ?? '');
+
+        // Aufräumen: die benutzten Werke wieder frei, damit späteren Tests genug freie Werke bleiben
+        Db::run("UPDATE werke SET status = 'available', verkauft_am = NULL, verkauft_session = NULL, doppelverkauf_session = NULL, reserviert_bis = NULL, reserviert_session = NULL WHERE slug IN (?, ?, ?)", [$a, $b, $d]);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

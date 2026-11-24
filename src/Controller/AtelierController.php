@@ -54,6 +54,8 @@ final class AtelierController
             'gespeichert' => 'Gespeichert. Der Shop zeigt die Änderung sofort.',
             'inzwischen-verkauft' => 'Gespeichert. Achtung: Das Werk wurde inzwischen verkauft und bleibt „Verkauft“.',
             'entfernt' => 'Werk aus dem Shop entfernt.',
+            'entfernen-bezahlvorgang' => 'Nicht entfernt: Für dieses Werk läuft gerade ein Bezahlvorgang, der sich nicht beenden ließ. Bitte in einer halben Stunde erneut versuchen.',
+            'verkauft-zahlung-laeuft' => 'Gespeichert als „Verkauft“. Achtung: Ein laufender Bezahlvorgang ließ sich nicht beenden. Zahlt der Käufer noch, erscheint hier ein Hinweis zur Erstattung.',
             'bezahlvorgang-laeuft' => 'Gespeichert. Ein laufender Bezahlvorgang ließ sich gerade nicht beenden; das Werk bleibt bis zu dessen Ablauf reserviert. Bitte später prüfen.',
             'bezahlvorgang-beendet' => 'Gespeichert. Ein laufender Bezahlvorgang für dieses Werk wurde beendet, weil sich Preis, Versand oder Sichtbarkeit geändert haben.',
             'nicht-mehr-da' => 'Das Werk wurde inzwischen aus dem Shop entfernt. Die Änderungen wurden nicht gespeichert.',
@@ -473,8 +475,9 @@ final class AtelierController
                 }
             } catch (\Throwable $e) {
                 Log::warn('Offene Stripe-Sitzung nicht geschlossen: ' . $e->getMessage());
-                if ($releaseAfterExpire && isset($r['msg'])) {
-                    $r['msg'] = 'bezahlvorgang-laeuft'; // Reservierung bleibt, bis die Sitzung abläuft
+                if (isset($r['msg'])) {
+                    // Reservierung bleibt bis zum Ablauf bzw. Verkauf von Hand mit laufender Zahlung: ehrlich melden
+                    $r['msg'] = $releaseAfterExpire ? 'bezahlvorgang-laeuft' : 'verkauft-zahlung-laeuft';
                 }
             }
         }
@@ -515,6 +518,10 @@ final class AtelierController
         $written = [];
         foreach (['' => 'full', '-sm' => 'sm', '-xs' => 'xs'] as $suffix => $field) {
             $f = $_FILES[$field] ?? null;
+            if ($f && in_array($f['error'] ?? null, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+                self::cleanup($written);
+                Http::jsonOut(['error' => 'Foto zu groß für den Server (Grenze ' . ini_get('upload_max_filesize') . ')'], 413);
+            }
             if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) {
                 self::cleanup($written);
                 Http::jsonOut(['error' => 'Datei fehlt'], 400);
@@ -734,22 +741,21 @@ final class AtelierController
             }
             if ($path === '/atelier/archivieren' && $method === 'POST') {
                 $id = (int) Http::post('id', 12);
-                $open = null;
                 if ($id) {
-                    $open = Db::transaction(function () use ($id) {
-                        $r = Db::one('SELECT reserviert_session, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE id = ? FOR UPDATE', [$id]);
-                        Db::run('UPDATE werke SET aktiv = 0, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
-                        return $r && (int) $r['reserviert'] && str_starts_with((string) $r['reserviert_session'], 'cs_') ? $r['reserviert_session'] : null;
-                    });
-                }
-                if ($open !== null) {
-                    // Läuft gerade ein Bezahlvorgang, die Stripe-Sitzung schließen, damit niemand ein entferntes Werk kauft
-                    try {
-                        CheckoutController::stripe()?->checkout->sessions->expire($open);
-                        Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$open]);
-                    } catch (\Throwable $e) {
-                        Log::warn('Offene Stripe-Sitzung beim Entfernen nicht geschlossen: ' . $e->getMessage());
+                    // Läuft gerade ein Bezahlvorgang, zuerst die Stripe-Sitzung schließen. Gelingt das nicht, wird das
+                    // Werk NICHT entfernt – sonst könnte es unbemerkt gekauft werden, obwohl es nicht mehr im Atelier erscheint.
+                    $r = Db::one('SELECT reserviert_session, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE id = ?', [$id]);
+                    $open = $r && (int) $r['reserviert'] && str_starts_with((string) $r['reserviert_session'], 'cs_') ? $r['reserviert_session'] : null;
+                    if ($open !== null) {
+                        try {
+                            CheckoutController::stripe()?->checkout->sessions->expire($open);
+                            Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$open]);
+                        } catch (\Throwable $e) {
+                            Log::warn('Entfernen abgebrochen, Stripe-Sitzung nicht geschlossen: ' . $e->getMessage());
+                            Http::redirect('/atelier/werk/' . $id . '?ok=entfernen-bezahlvorgang');
+                        }
                     }
+                    Db::run('UPDATE werke SET aktiv = 0, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
                 }
                 Http::redirect('/atelier?ok=entfernt');
             }

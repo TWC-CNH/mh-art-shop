@@ -93,6 +93,9 @@ if (($seg[1] ?? '') === 'checkout' && ($seg[2] ?? '') === 'sessions') {
         $state['sessions'][$id]['status'] = 'expired';
         $send(200, $public($state['sessions'][$id]));
     }
+    if ($method === 'GET' && $id !== null && !empty($state['fail_retrieve'])) {
+        $send(500, ['error' => ['type' => 'api_error', 'message' => 'Simulierter Ausfall beim Abruf']]);
+    }
     if ($method === 'GET' && $id !== null) {
         $send(200, $public($state['sessions'][$id]));
     }

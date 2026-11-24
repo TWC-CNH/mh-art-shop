@@ -144,6 +144,9 @@ HTML,
         $mail = $slot['ok']
             ? Mailer::send($rec['email'], "Eingangsbestätigung Ihres Widerrufs ({$rec['ref']})", self::mailText($rec, $cfg), $cfg['contactEmail'])
             : ['sent' => false, 'reason' => $perIp['ok'] ? 'Limit je Empfänger erreicht' : 'Limit je IP erreicht'];
+        if ($perIp['ok'] && !$slot['ok']) {
+            RateLimit::undo($perIp['id'] ?? null); // keine Mail wegen Empfänger-Limit: zählt nicht je IP
+        }
         if ($slot['ok'] && !$mail['sent']) {
             RateLimit::undo($slot['id'] ?? null);
             RateLimit::undo($perIp['id'] ?? null); // Mailausfall: auch den Platz je IP zurückgeben
