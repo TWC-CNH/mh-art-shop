@@ -45,7 +45,9 @@ auf der passwortgeschützten Seite `/atelier` (Fotos, Preise, Texte, Verkauft/Au
 
 Alles unter **`https://matthiashuebner.art/atelier`**, am Rechner oder am Handy. Anmelden mit Benutzername, Passwort und dem 6-stelligen Code aus der Authenticator-App; die Anmeldung hält 30 Tage.
 
-**Zugänge verwalten** (per SSH): `php bin/atelier-user.php anlegen <name>` (neuer Zugang mit Authenticator-Einrichtung), `passwort <name>`, `2fa <name>` (neues Handy), `sperren <name>`, `liste`.
+**Zugänge verwalten** (per SSH): `php bin/atelier-user.php anlegen <name>` (neuer Zugang: zeigt einen QR-Code zum Scannen mit der Authenticator-App, den Schlüssel zum Eintippen und 10 Notfall-Codes zum Ausdrucken), `passwort <name>`, `2fa <name>` (neues Handy), `notfallcodes <name>`, `sperren <name>`, `liste`. Für helle Terminals `--hell` anhängen.
+
+**Handy verloren?** Auf der Anmeldeseite „Notfall-Code verwenden“ aufklappen und einen der ausgedruckten Codes eingeben (jeder gilt nur einmal). Danach per SSH `2fa <name>` ausführen und die App neu einrichten.
 
 - **Neues Werk:** „+ Neues Werk“ → Fotos hinzufügen → Titel, Technik, Maße, Beschreibung, Preis → „Werk anlegen“
 - **Fotos:** bis zu 8 je Werk. Das erste ist das Hauptfoto. Bei jedem weiteren auswählen, was es zeigt: *Schwarzlicht*, *Detail*, *Im Raum* oder *Ansicht*. Mit ↑ ↓ sortieren. Große Handyfotos werden beim Hochladen automatisch verkleinert. Heißt die Datei z. B. `nacht-uv.jpg`, wird sie als Schwarzlicht-Foto erkannt.
@@ -100,7 +102,8 @@ Dateien per **FTP**, alles Weitere per **SSH**.
    cd ~/public_html/matthiashuebner.art
    /usr/bin/php8.4 bin/migrate.php
    /usr/bin/php8.4 bin/import-catalog.php
-   /usr/bin/php8.4 bin/atelier-user.php anlegen matthias   # Passwort + Authenticator-App
+   /usr/bin/php8.4 bin/atelier-user.php anlegen matthias    # Passwort, QR-Code, Notfall-Codes
+   /usr/bin/php8.4 bin/atelier-user.php anlegen christian
    /usr/bin/php8.4 bin/smoke.php
    ```
 9. **Dokumentenwurzel prüfen – nur mit Markierungsdatei**, nie durch Abrufe von `/.env`, `/vendor/…` o. Ä. (Hetzner sperrt sonst die anfragende IP):
@@ -146,6 +149,6 @@ Laufende Kosten: das Hetzner-Paket; Stripe nur Transaktionsgebühren (ca. 1,5 % 
 - [ ] Preise der Werke ohne Preis im Atelier ergänzen, wenn sie direkt kaufbar sein sollen
 - [ ] Testkauf und Testabbruch im Stripe-Testmodus
 - [ ] SMTP eingetragen und Test-Widerruf abgeschickt (Bestätigung kommt beim Käufer und bei Matthias an)
-- [ ] Atelier-Zugang für Matthias angelegt (`bin/atelier-user.php`), Authenticator-App eingerichtet, Atelier einmal mit ihm durchgegangen
+- [ ] Atelier-Zugänge `matthias` und `christian` angelegt (`bin/atelier-user.php`), Authenticator-Apps eingerichtet, Notfall-Codes ausgedruckt, Atelier einmal mit Matthias durchgegangen
 - [ ] `DATA_ENCRYPTION_KEY` im Passwortmanager gesichert
 - [ ] Cron läuft, Datenbanksicherung aktiv

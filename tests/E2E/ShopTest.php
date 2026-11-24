@@ -236,6 +236,22 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString(e($user[0]), $first->get('/atelier')->body);
         $this->assertSame(401, (new Client('192.0.2.16'))->post('/atelier/login', $ok)->status, 'derselbe Code ein zweites Mal');
 
+        // Notfall-Code statt App: einmal gültig, mit Hinweis auf die verbleibende Zahl
+        $codes = \App\AtelierAuth::newRecoveryCodes($user[0]);
+        $this->assertCount(10, $codes);
+        $this->assertMatchesRegularExpression('/^[A-Z2-9]{5}-[A-Z2-9]{5}$/', $codes[0]);
+        $this->assertSame(10, (int) Db::one('SELECT COUNT(*) AS n FROM atelier_notfallcodes n JOIN atelier_benutzer b ON b.id = n.benutzer_id WHERE b.benutzer = ?', [$user[0]])['n']);
+        $this->assertStringNotContainsString($codes[0], json_encode(Db::all('SELECT code_hash FROM atelier_notfallcodes')), 'nur Hash gespeichert');
+        $rec = ['benutzer' => $user[0], 'passwort' => Stack::PASSWORD, 'code' => '', 'notfallcode' => strtolower(str_replace('-', '', $codes[0]))];
+        $viaRecovery = new Client('192.0.2.17');
+        $r = $viaRecovery->post('/atelier/login', $rec);
+        $this->assertSame(303, $r->status);
+        $this->assertStringContainsString('Noch%209%20Notfall-Code', (string) $r->header('location'));
+        $this->assertSame(401, (new Client('192.0.2.18'))->post('/atelier/login', $rec)->status, 'Notfall-Code ein zweites Mal');
+        $this->assertSame(401, (new Client('192.0.2.18'))->post('/atelier/login', ['passwort' => 'falsch-falsch'] + ['notfallcode' => $codes[1]] + $rec)->status, 'Notfall-Code ohne richtiges Passwort');
+        \App\AtelierAuth::newRecoveryCodes($user[0]);
+        $this->assertSame(401, (new Client('192.0.2.19'))->post('/atelier/login', ['notfallcode' => $codes[2]] + $rec)->status, 'alte Codes nach Neuerzeugung ungültig');
+
         // gesperrter Benutzer ist sofort abgemeldet
         Stack::applyToProcess();
         \App\AtelierAuth::setActive($user[0], false);
@@ -522,6 +538,16 @@ final class ShopTest extends TestCase
         $this->assertNull(Db::one("SELECT 1 FROM widerrufe WHERE ref = 'W-ALT'"));
         $this->assertNotNull(Db::one("SELECT 1 FROM widerrufe WHERE ref = 'W-JUNG'"));
         $this->assertNotNull(Db::one("SELECT 1 FROM merker WHERE name = 'cron_letzter_lauf'"));
+    }
+
+    public function testBenutzerSkriptZeigtQrCodeSchluesselUndNotfallcodes(): void
+    {
+        $out = Stack::php('bin/atelier-user.php', ['anlegen', 'cli-test', '--generate']);
+        $this->assertStringContainsString('diesen QR-Code scannen', $out);
+        $this->assertMatchesRegularExpression('/[█▀▄]{10,}/u', $out);
+        $this->assertMatchesRegularExpression('/Schlüssel: ([A-Z2-7]{4} ){7}[A-Z2-7]{4}/u', $out);
+        $this->assertSame(10, preg_match_all('/\b[A-Z2-9]{5}-[A-Z2-9]{5}\b/', $out));
+        $this->assertStringContainsString('cli-test', Stack::php('bin/atelier-user.php', ['liste']));
     }
 
     public function testSmokeSkriptLaeuft(): void

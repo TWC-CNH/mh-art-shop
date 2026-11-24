@@ -32,7 +32,7 @@ final class AtelierController
         echo '<!doctype html>
 <html lang="de" data-theme="day"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><meta name="csrf" content="' . $csrf . '"><title>' . e($title) . ' · Atelier</title>
-<link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/assets/shop.css?v=a5"><link rel="stylesheet" href="/assets/atelier.css?v=a5"></head>
+<link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/assets/shop.css?v=a5"><link rel="stylesheet" href="/assets/atelier.css?v=a6"></head>
 <body class="atelier-body">
 <a class="skip" href="#inhalt">Zum Inhalt</a>
 <header class="at-head"><a href="/atelier" class="at-brand"><img src="/assets/logo-mhart.png" alt="MH ART" height="34"> <span>Atelier</span></a>
@@ -59,7 +59,10 @@ final class AtelierController
     <form method="post" action="/atelier/login" class="at-form">
       <label class="field"><span>Benutzername</span><input name="benutzer" required autocomplete="username" autocapitalize="none" spellcheck="false" autofocus></label>
       <label class="field"><span>Passwort</span><input type="password" name="passwort" required autocomplete="current-password"></label>
-      <label class="field"><span>Code aus der Authenticator-App</span><input name="code" required inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" aria-describedby="code-hint"><small id="code-hint">6 Ziffern, wechselt alle 30 Sekunden</small></label>
+      <label class="field"><span>Code aus der Authenticator-App</span><input name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="one-time-code" aria-describedby="code-hint"><small id="code-hint">6 Ziffern, wechselt alle 30 Sekunden</small></label>
+      <details class="at-recovery"><summary>Handy nicht zur Hand? Notfall-Code verwenden</summary>
+        <label class="field"><span>Notfall-Code</span><input name="notfallcode" maxlength="11" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX" aria-describedby="recovery-hint"><small id="recovery-hint">Jeder Notfall-Code gilt nur einmal.</small></label>
+      </details>
       <button class="btn btn--wide" type="submit">Anmelden</button>
     </form></section>', $status ?: ($error !== '' ? 401 : 200));
     }
@@ -531,11 +534,16 @@ final class AtelierController
             if (!RateLimit::hit('login-user', $name, $cfg['limits']['loginFailsPerIp'] * 2, $win)['ok']) {
                 self::loginPage("Zu viele Fehlversuche für diesen Zugang. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
             }
-            $user = AtelierAuth::attempt($name, Http::post('passwort', 500), Http::post('code', 10));
+            $code = trim(Http::post('code', 10)) !== '' ? Http::post('code', 10) : Http::post('notfallcode', 20);
+            $user = AtelierAuth::attempt($name, Http::post('passwort', 500), $code);
             if ($user) {
                 RateLimit::reset('login', $ip);
                 RateLimit::reset('login-user', $name);
                 AtelierAuth::login($user);
+                if (isset($user['_notfall_rest'])) {
+                    $rest = $user['_notfall_rest'];
+                    Http::redirect('/atelier?ok=' . rawurlencode("Mit Notfall-Code angemeldet. Noch $rest Notfall-Code(s) übrig. Bitte die Authenticator-App neu einrichten lassen (bin/atelier-user.php 2fa)."));
+                }
                 Http::redirect('/atelier');
             }
             usleep(800000);

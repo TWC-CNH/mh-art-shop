@@ -40,6 +40,10 @@ final class AtelierAuth
         if (!$u || !$pwOk || $u['totp_enc'] === null) {
             return null;
         }
+        // Notfall-Code (Format XXXXX-XXXXX) statt App-Code: einmalig gültig
+        if (preg_match('/^[A-Za-z0-9]{5}-?[A-Za-z0-9]{5}$/', trim($code))) {
+            return self::useRecoveryCode($u, $code);
+        }
         try {
             $secret = Crypto::decrypt($u['totp_enc'], 'atelier_benutzer/totp/' . $u['id'])['secret'];
         } catch (\Throwable $e) {
@@ -53,6 +57,56 @@ final class AtelierAuth
         // Zeitschritt atomar verbrauchen: derselbe Code funktioniert kein zweites Mal
         $used = Db::run('UPDATE atelier_benutzer SET totp_letzter_schritt = ?, letzter_login = UTC_TIMESTAMP() WHERE id = ? AND (totp_letzter_schritt IS NULL OR totp_letzter_schritt < ?)', [$step, $u['id'], $step]);
         return $used === 1 ? $u : null;
+    }
+
+    // ---------- Notfall-Codes ----------
+
+    private const RECOVERY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // ohne leicht verwechselbare Zeichen (0/O, 1/I)
+    public const RECOVERY_COUNT = 10;
+
+    private static function normalizeRecovery(string $code): string
+    {
+        return strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $code) ?? '');
+    }
+
+    /** Prüft einen Notfall-Code und verbraucht ihn. Liefert den Benutzer (mit '_notfall_rest') oder null. */
+    private static function useRecoveryCode(array $u, string $code): ?array
+    {
+        $norm = self::normalizeRecovery($code);
+        foreach (Db::all('SELECT id, code_hash FROM atelier_notfallcodes WHERE benutzer_id = ? AND benutzt IS NULL', [$u['id']]) as $row) {
+            if (password_verify($norm, $row['code_hash'])) {
+                if (Db::run('UPDATE atelier_notfallcodes SET benutzt = UTC_TIMESTAMP() WHERE id = ? AND benutzt IS NULL', [$row['id']]) !== 1) {
+                    return null; // gleichzeitig schon verbraucht
+                }
+                Db::run('UPDATE atelier_benutzer SET letzter_login = UTC_TIMESTAMP() WHERE id = ?', [$u['id']]);
+                Log::warn('Atelier: Notfall-Code verwendet für Benutzer ' . $u['id']);
+                $u['_notfall_rest'] = (int) Db::one('SELECT COUNT(*) AS n FROM atelier_notfallcodes WHERE benutzer_id = ? AND benutzt IS NULL', [$u['id']])['n'];
+                return $u;
+            }
+        }
+        return null;
+    }
+
+    /** Erzeugt neue Notfall-Codes (alte werden ungültig). Liefert die Codes im Klartext – nur einmal anzeigen. */
+    public static function newRecoveryCodes(string $name): array
+    {
+        $u = Db::one('SELECT id FROM atelier_benutzer WHERE benutzer = ?', [mb_strtolower(trim($name))]);
+        if (!$u) {
+            throw new \InvalidArgumentException("Benutzer $name gibt es nicht.");
+        }
+        $codes = [];
+        Db::transaction(function () use ($u, &$codes) {
+            Db::run('DELETE FROM atelier_notfallcodes WHERE benutzer_id = ?', [$u['id']]);
+            for ($i = 0; $i < self::RECOVERY_COUNT; $i++) {
+                $c = '';
+                for ($j = 0; $j < 10; $j++) {
+                    $c .= self::RECOVERY_ALPHABET[random_int(0, strlen(self::RECOVERY_ALPHABET) - 1)];
+                }
+                $codes[] = substr($c, 0, 5) . '-' . substr($c, 5);
+                Db::run('INSERT INTO atelier_notfallcodes (benutzer_id, code_hash) VALUES (?, ?)', [$u['id'], self::hashPassword($c)]);
+            }
+        });
+        return $codes;
     }
 
     public static function login(array $user): void
