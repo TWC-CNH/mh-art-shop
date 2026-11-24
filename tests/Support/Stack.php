@@ -76,10 +76,10 @@ final class Stack
         \App\Db::reset();
     }
 
-    public static function php(string $script, array $args = []): string
+    public static function php(string $script, array $args = [], array $extraEnv = []): string
     {
         $cmd = array_merge([PHP_BINARY, self::root() . '/' . $script], $args);
-        $p = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, self::root(), getenv() + self::env());
+        $p = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, self::root(), $extraEnv + getenv() + self::env());
         $out = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
         $code = proc_close($p);
         if ($code !== 0) {

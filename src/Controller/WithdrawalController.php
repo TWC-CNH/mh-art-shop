@@ -15,7 +15,6 @@ use App\View\Render;
 /** Elektronische Widerrufsfunktion nach § 356a BGB („Vertrag widerrufen“ → „Widerruf bestätigen“ → Eingangsbestätigung). */
 final class WithdrawalController
 {
-    private const EMAIL_RE = '/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]{2,}$/';
 
     public static function stamp(\DateTimeImmutable $d): string
     {
@@ -106,8 +105,8 @@ HTML,
         if ($g('website', 100) !== '') {
             Http::html(self::formPage()); // Spam-Falle
         }
-        if ($values['name'] === '' || $values['vertrag'] === '' || !preg_match(self::EMAIL_RE, $values['email'])) {
-            Http::html(self::formPage($values, 'Bitte Name, den betroffenen Kauf und eine gültige E-Mail-Adresse angeben.'), 422);
+        if ($values['name'] === '' || $values['vertrag'] === '' || !\App\Mailer::validAddress($values['email'])) {
+            Http::html(self::formPage($values, 'Bitte Name, den betroffenen Kauf und eine gültige E-Mail-Adresse angeben (ohne Umlaute, z. B. joerg@… statt jörg@…).'), 422);
         }
 
         // Missbrauchsschutz: Das Formular verschickt Mails über das Shop-Postfach an frei eingegebene Adressen.

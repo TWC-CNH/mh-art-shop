@@ -424,6 +424,46 @@ final class ShopTest extends TestCase
         $this->assertSame(200, $c->get($m[0])->status);
     }
 
+    /** Drittes Review von PR #1 */
+    public function testDrittesReview(): void
+    {
+        // Danke-Seite nur für abgeschlossene Bezahlvorgänge
+        $this->assertSame('/', (new Client())->get('/danke')->header('location'));
+        $free = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 3"), 'slug');
+        $this->assertSame(200, self::buy($free[0])->status);
+        $sid = self::werk($free[0])['reserviert_session'];
+        $open = (new Client())->get("/danke?session_id=$sid");
+        $this->assertSame(303, $open->status);
+        $this->assertSame('/werk/' . $free[0], $open->header('location'));
+
+        // Werk entfernen, während jemand bezahlt: Stripe-Sitzung wird geschlossen
+        [$c, $csrf] = self::login('192.0.2.40');
+        $c->post('/atelier/archivieren', ['csrf' => $csrf, 'id' => self::werk($free[0])['id']]);
+        $this->assertSame('expired', Stack::stripeSessions()[$sid]['status']);
+        $this->assertNull(self::werk($free[0])['reserviert_session']);
+        $this->assertSame('abgelaufen', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$sid])['status']);
+
+        // „Vergeben“-Klicks zählen nicht gegen die Checkout-Begrenzung
+        $this->assertSame(200, self::buy($free[1])->status);
+        $nat = new Client('203.0.113.60');
+        for ($i = 0; $i < 4; $i++) {
+            $this->assertSame(409, self::buy($free[1], $nat)->status);
+        }
+        $this->assertSame(200, self::buy($free[2], $nat)->status);
+
+        // Umlaut-Adresse wird mit klarer Meldung abgelehnt statt still nicht versendet
+        $w = (new Client('203.0.113.61'))->post('/vertrag-widerrufen', ['name' => 'Jörg', 'vertrag' => 'Werk X', 'email' => 'jörg@example.de']);
+        $this->assertSame(422, $w->status);
+        $this->assertStringContainsString('ohne Umlaute', $w->body);
+
+        // Viele Fehlversuche für einen Benutzernamen (von vielen IPs) sperren den echten Zugang nicht aus
+        $user = Stack::createUser();
+        for ($i = 0; $i < 7; $i++) {
+            (new Client('198.51.100.' . (150 + $i)))->post('/atelier/login', ['benutzer' => $user[0], 'passwort' => 'falsch-' . $i, 'code' => '000000']);
+        }
+        $this->assertSame(303, (new Client('198.51.100.170'))->post('/atelier/login', Stack::credentials($user))->status);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

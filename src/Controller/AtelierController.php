@@ -529,10 +529,11 @@ final class AtelierController
             if (!RateLimit::hit('login', $ip, $cfg['limits']['loginFailsPerIp'], $win)['ok']) {
                 self::loginPage("Zu viele Fehlversuche. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
             }
-            // zusätzlich je Benutzername, gegen verteilte Versuche von vielen IPs
             $name = mb_strtolower(trim(Http::post('benutzer', 60)));
-            if (!RateLimit::hit('login-user', $name, $cfg['limits']['loginFailsPerIp'] * 2, $win)['ok']) {
-                self::loginPage("Zu viele Fehlversuche für diesen Zugang. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
+            // Viele Fehlversuche für diesen Benutzernamen (verteilt über viele IPs): bremsen, aber nicht sperren –
+            // sonst könnte jeder den echten Zugang aussperren. Mit richtigem Passwort UND Code klappt es immer.
+            if (RateLimit::attempts('login-user', $name, $win) >= $cfg['limits']['loginFailsPerIp'] * 2) {
+                sleep(2);
             }
             $code = trim(Http::post('code', 10)) !== '' ? Http::post('code', 10) : Http::post('notfallcode', 20);
             $user = AtelierAuth::attempt($name, Http::post('passwort', 500), $code);
@@ -546,6 +547,7 @@ final class AtelierController
                 }
                 Http::redirect('/atelier');
             }
+            RateLimit::hit('login-user', $name, PHP_INT_MAX, $win); // Fehlversuch je Benutzer zählen
             usleep(800000);
             // bewusst ohne Hinweis, welcher der drei Werte falsch war
             self::loginPage('Anmeldung fehlgeschlagen. Bitte Benutzername, Passwort und Code prüfen.');
@@ -602,8 +604,22 @@ final class AtelierController
             }
             if ($path === '/atelier/archivieren' && $method === 'POST') {
                 $id = (int) Http::post('id', 12);
+                $open = null;
                 if ($id) {
-                    Db::run('UPDATE werke SET aktiv = 0 WHERE id = ?', [$id]);
+                    $open = Db::transaction(function () use ($id) {
+                        $r = Db::one('SELECT reserviert_session, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE id = ? FOR UPDATE', [$id]);
+                        Db::run('UPDATE werke SET aktiv = 0, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
+                        return $r && (int) $r['reserviert'] && str_starts_with((string) $r['reserviert_session'], 'cs_') ? $r['reserviert_session'] : null;
+                    });
+                }
+                if ($open !== null) {
+                    // Läuft gerade ein Bezahlvorgang, die Stripe-Sitzung schließen, damit niemand ein entferntes Werk kauft
+                    try {
+                        CheckoutController::stripe()?->checkout->sessions->expire($open);
+                        Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$open]);
+                    } catch (\Throwable $e) {
+                        Log::warn('Offene Stripe-Sitzung beim Entfernen nicht geschlossen: ' . $e->getMessage());
+                    }
                 }
                 Http::redirect('/atelier?ok=' . rawurlencode('Werk aus dem Shop entfernt.'));
             }

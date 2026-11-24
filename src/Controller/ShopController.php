@@ -44,6 +44,12 @@ final class ShopController
                 Log::warn('Session nicht gefunden: ' . $e->getMessage());
             }
         }
+        // Nur ein wirklich abgeschlossener Bezahlvorgang bekommt die Bestätigung (und die Conversion).
+        // Abgebrochene oder abgelaufene Sitzungen, fremde IDs und Aufrufe ohne ID landen beim Werk bzw. auf der Startseite.
+        if (($session['status'] ?? '') !== 'complete') {
+            $slug = $session['metadata']['slug'] ?? '';
+            Http::redirect(is_string($slug) && $slug !== '' && $work ? '/werk/' . rawurlencode($slug) : '/');
+        }
         Http::html(Render::thanks($session, $work));
     }
 

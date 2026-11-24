@@ -18,7 +18,6 @@ use App\RateLimit;
 final class InquiryController
 {
     private const KINDS = ['allgemein', 'preis', 'frage', 'warteliste', 'aehnlich'];
-    private const EMAIL_RE = '/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]{2,}$/';
 
     private static function done(bool $ok, int $status = 200, string $error = ''): never
     {
@@ -63,8 +62,8 @@ final class InquiryController
             'telefon' => preg_replace('/[^\d+()\/ -]/', '', $g('telefon', 40)),
             'nachricht' => $g('nachricht', 4000),
         ];
-        if ($d['name'] === '' || $d['nachricht'] === '' || !preg_match(self::EMAIL_RE, $d['email']) || Http::post('datenschutz') !== 'ja') {
-            self::done(false, 422, 'Bitte Name, E-Mail, Nachricht und die Einwilligung angeben.');
+        if ($d['name'] === '' || $d['nachricht'] === '' || !\App\Mailer::validAddress($d['email']) || Http::post('datenschutz') !== 'ja') {
+            self::done(false, 422, 'Bitte Name, eine gültige E-Mail-Adresse (ohne Umlaute), Nachricht und die Einwilligung angeben.');
         }
         $lim = RateLimit::hit('anfrage-ip', RateLimit::clientIp(), $cfg['limits']['inquiryPerIp'], 3600);
         if (!$lim['ok']) {

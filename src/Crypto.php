@@ -38,8 +38,21 @@ final class Crypto
     {
         $c = Config::get();
         $cur = self::parseKey($c['dataKey'], 'DATA_ENCRYPTION_KEY');
-        $old = self::parseKey($c['dataKeyOld'], 'DATA_ENCRYPTION_KEY_OLD');
+        try {
+            $old = self::parseKey($c['dataKeyOld'], 'DATA_ENCRYPTION_KEY_OLD');
+        } catch (\Throwable $e) {
+            Log::warn($e->getMessage() . ' Der alte Schlüssel wird ignoriert.');
+            $old = null;
+        }
         return ['current' => $cur, 'all' => array_values(array_filter([$cur, $old]))];
+    }
+
+    /** Ist ein Eintrag schon mit dem aktuellen Schlüssel verschlüsselt? (für bin/rotate-key.php) */
+    public static function usesCurrentKey(string $box): bool
+    {
+        $cur = self::keys()['current'];
+        $parts = explode('.', $box);
+        return $cur !== null && count($parts) === 4 && $parts[1] === self::keyId($cur);
     }
 
     public static function ready(): bool

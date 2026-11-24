@@ -135,7 +135,7 @@ src/Controller/           Shop, Checkout/Webhook, Widerruf, Anfrage, Atelier
 src/View/                 HTML der Seiten, Rechtstexte, Künstlerdaten
 src/                      Konfiguration, Datenbank, Werkkatalog, Verschlüsselung, Begrenzung, Mail, CSP
 migrations/               Datenbankschema
-bin/                      migrate, import-catalog, cron, smoke, atelier-user, generate-key, build-release
+bin/                      migrate, import-catalog, cron, smoke, atelier-user, generate-key, rotate-key, build-release
 data/catalog.json         Startbestand der Werke
 tests/                    PHPUnit (Unit, Ende-zu-Ende mit Stripe-Ersatz)
 ```

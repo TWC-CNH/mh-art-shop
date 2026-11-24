@@ -198,7 +198,7 @@ final class AtelierAuth
         $hash = self::hashPassword($password);
         $existing = Db::one('SELECT id, totp_enc FROM atelier_benutzer WHERE benutzer = ?', [$name]);
         if ($existing) {
-            Db::run('UPDATE atelier_benutzer SET passwort_hash = ?, aktiv = 1 WHERE id = ?', [$hash, $existing['id']]);
+            Db::run('UPDATE atelier_benutzer SET passwort_hash = ? WHERE id = ?', [$hash, $existing['id']]); // Sperre bleibt bestehen
             Db::run('DELETE FROM atelier_sessions WHERE benutzer_id = ?', [$existing['id']]);
             return $existing['totp_enc'] === null ? self::reset2fa($name) : null;
         }
@@ -221,7 +221,11 @@ final class AtelierAuth
 
     public static function setActive(string $name, bool $active): bool
     {
-        $n = Db::run('UPDATE atelier_benutzer SET aktiv = ? WHERE benutzer = ?', [$active ? 1 : 0, mb_strtolower(trim($name))]);
+        if (!Db::one('SELECT 1 FROM atelier_benutzer WHERE benutzer = ?', [mb_strtolower(trim($name))])) {
+            return false;
+        }
+        Db::run('UPDATE atelier_benutzer SET aktiv = ? WHERE benutzer = ?', [$active ? 1 : 0, mb_strtolower(trim($name))]);
+        $n = 1;
         if (!$active) {
             Db::run('DELETE s FROM atelier_sessions s JOIN atelier_benutzer b ON b.id = s.benutzer_id WHERE b.benutzer = ?', [mb_strtolower(trim($name))]);
         }

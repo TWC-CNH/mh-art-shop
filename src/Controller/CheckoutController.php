@@ -93,16 +93,16 @@ final class CheckoutController
             self::reply($back('vergeben'), 'vergeben', 409);
         }
 
-        // Missbrauchsschutz: Jeder neue Bezahlvorgang reserviert ein Werk. Je IP nur wenige pro Reservierungsdauer.
-        $limit = RateLimit::hit('checkout', RateLimit::clientIp(), $cfg['limits']['checkoutPerIp'], $cfg['reserveMinutes'] * 60);
-        if (!$limit['ok']) {
-            self::reply($back('zuviele'), 'zuviele', 429);
-        }
-
         $seconds = $cfg['reserveMinutes'] * 60 + 30;
         $token = Catalog::claim($work['id'], $seconds + 60);
         if ($token === null) {
-            self::reply($back('vergeben'), 'vergeben', 409);
+            self::reply($back('vergeben'), 'vergeben', 409); // zählt nicht gegen die Begrenzung
+        }
+        // Missbrauchsschutz: Jeder neue Bezahlvorgang reserviert ein Werk. Je IP nur wenige pro Reservierungsdauer.
+        $limit = RateLimit::hit('checkout', RateLimit::clientIp(), $cfg['limits']['checkoutPerIp'], $cfg['reserveMinutes'] * 60);
+        if (!$limit['ok']) {
+            Catalog::release($work['id'], $token);
+            self::reply($back('zuviele'), 'zuviele', 429);
         }
 
         $session = null;

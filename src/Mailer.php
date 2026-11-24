@@ -12,6 +12,12 @@ use PHPMailer\PHPMailer\PHPMailer;
  */
 final class Mailer
 {
+    /** Adresse, die auch der Versand annimmt (Eingaben vorher damit prüfen). */
+    public static function validAddress(string $email): bool
+    {
+        return mb_strlen($email) <= 200 && PHPMailer::validateAddress($email) && !preg_match('/[\r\n<>"]/', $email);
+    }
+
     /** @return array{sent: bool, reason: string} */
     public static function send(string $to, string $subject, string $text, string $replyTo = ''): array
     {
@@ -40,7 +46,11 @@ final class Mailer
             $m->setFrom($s['from'], $cfg['artistName']);
             $m->addAddress($to);
             if ($replyTo !== '') {
-                $m->addReplyTo($replyTo);
+                try {
+                    $m->addReplyTo($replyTo);
+                } catch (\Throwable) {
+                    Log::warn('Antwortadresse ungültig, Mail geht ohne Reply-To raus');
+                }
             }
             $m->Subject = $subject;
             $m->Body = $text;

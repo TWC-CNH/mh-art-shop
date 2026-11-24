@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace App;
 
 /**
- * Liest die .env-Datei (einfaches KEY=VALUE-Format, # für Kommentare) ohne Abhängigkeit.
+ * Liest die .env-Datei (einfaches KEY=VALUE-Format, # für Kommentare – auch hinter dem Wert) ohne Abhängigkeit.
  * Werte aus der echten Umgebung (getenv) haben Vorrang, damit Tests und Server sie überschreiben können.
  * Es wird bewusst nichts per putenv() gesetzt: Geheimnisse sollen nicht an Kindprozesse vererbt werden.
  */
@@ -28,6 +28,12 @@ final class Env
             $v = $m[2];
             if (strlen($v) >= 2 && ($v[0] === '"' || $v[0] === "'") && substr($v, -1) === $v[0]) {
                 $v = substr($v, 1, -1);
+            } elseif (preg_match('/^(["\'])(.*?)\1\s+#/', $v, $q)) {
+                $v = $q[2]; // in Anführungszeichen, dahinter ein Kommentar
+            } else {
+                // Kommentar hinter dem Wert („KEY=wert   # Erklärung“) gehört nicht dazu.
+                // Ein # direkt im Wert (ohne Leerzeichen davor) bleibt erhalten; sonst Wert in Anführungszeichen setzen.
+                $v = rtrim((string) preg_replace('/\s+#.*$/', '', $v));
             }
             self::$file[$m[1]] = $v;
         }
