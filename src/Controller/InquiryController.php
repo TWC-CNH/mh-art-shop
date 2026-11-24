@@ -56,7 +56,7 @@ final class InquiryController
         }
         $cfg = Config::get();
         $g = fn (string $k, int $n) => mb_substr(trim(Http::post($k, $n * 2)), 0, $n);
-        if ($g('bot-field', 100) !== '') {
+        if ($g('hp_a3k', 100) !== '') {
             self::done(true); // Spam-Falle: so tun, als wäre alles gut
         }
         $d = [

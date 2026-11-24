@@ -650,8 +650,9 @@ final class AtelierController
             $ip = RateLimit::clientIp();
             $win = $cfg['limits']['loginWindowMin'] * 60;
             // Jeder Versuch belegt vor der Passwortprüfung einen Platz (atomar), damit auch viele
-            // gleichzeitige Anfragen nicht mehr als das Limit an Versuchen bekommen. Erfolg setzt zurück.
-            if (!RateLimit::hit('login', $ip, $cfg['limits']['loginFailsPerIp'], $win)['ok']) {
+            // gleichzeitige Anfragen nicht mehr als das Limit an Versuchen bekommen. Erfolg gibt nur den eigenen Platz zurück.
+            $slot = RateLimit::hit('login', $ip, $cfg['limits']['loginFailsPerIp'], $win);
+            if (!$slot['ok']) {
                 self::loginPage("Zu viele Fehlversuche. Bitte in {$cfg['limits']['loginWindowMin']} Minuten erneut versuchen.", 429);
             }
             $name = mb_strtolower(trim(Http::post('benutzer', 60)));
@@ -671,7 +672,12 @@ final class AtelierController
             $code = trim(Http::post('code', 20)) !== '' ? Http::post('code', 20) : Http::post('notfallcode', 20);
             $user = AtelierAuth::attempt($name, Http::post('passwort', 500), $code);
             if ($user) {
-                RateLimit::reset('login', $ip);
+                // Nur die eigenen Versuche zurückgeben (dieser Versuch plus die eigenen Fehlversuche von dieser IP).
+                // Fehlversuche gegen andere Benutzer von derselben IP bleiben stehen, sonst könnte ein gültiger Zugang
+                // die IP-Grenze immer wieder löschen.
+                RateLimit::undo($slot['id'] ?? null);
+                RateLimit::undoLatest('login', $ip, RateLimit::attempts('login-eigene', $name . '|' . $ip, $win));
+                RateLimit::reset('login-eigene', $name . '|' . $ip);
                 RateLimit::reset('login-user', $name);
                 RateLimit::reset('login-user-ip', $name . '|' . $ip);
                 AtelierAuth::login($user);
@@ -682,6 +688,7 @@ final class AtelierController
                 Http::redirect('/atelier');
             }
             RateLimit::hit('login-user', $name, PHP_INT_MAX, $win); // Fehlversuch je Benutzer zählen
+            RateLimit::hit('login-eigene', $name . '|' . $ip, PHP_INT_MAX, $win); // für die Rückgabe bei späterem Erfolg
             // bewusst ohne Hinweis, welcher der drei Werte falsch war
             self::loginPage('Anmeldung fehlgeschlagen. Bitte Benutzername, Passwort und Code prüfen.');
         }

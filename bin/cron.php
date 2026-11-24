@@ -41,6 +41,10 @@ try {
         $a = Db::run('DELETE FROM anfragen WHERE eingang < (UTC_TIMESTAMP() - INTERVAL ? MONTH)', [$r['inquiryMonths']]);
         $w = Db::run('DELETE FROM widerrufe WHERE eingang < (UTC_TIMESTAMP() - INTERVAL ? YEAR)', [$r['withdrawalYears']]);
         $e = Db::run('DELETE FROM webhook_events WHERE verarbeitet < (UTC_TIMESTAMP() - INTERVAL 90 DAY)');
+        // Bezahlvorgänge laufen bei Stripe höchstens 24 Stunden. Fehlt der Ablauf-Webhook, bleibt die Bestellung sonst
+        // ewig „offen“. Ausgenommen: Käufe, deren Werk damit verkauft ist (z. B. SEPA, Zahlung noch unterwegs).
+        Db::run("UPDATE bestellungen b SET b.status = 'abgelaufen' WHERE b.status = 'offen' AND b.erstellt < (UTC_TIMESTAMP() - INTERVAL 48 HOUR)
+            AND NOT EXISTS (SELECT 1 FROM werke w WHERE w.verkauft_session = b.stripe_session_id OR w.doppelverkauf_session = b.stripe_session_id)");
         // Hochgeladene Fotos, die keinem Werk (mehr) gehören und älter als 7 Tage sind, entfernen
         // (großzügig, damit ein offenes, noch nicht gespeichertes Atelier-Formular seine Fotos nicht verliert)
         $used = [];

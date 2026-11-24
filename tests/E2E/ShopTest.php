@@ -1168,7 +1168,7 @@ final class ShopTest extends TestCase
         $r = $c->post('/anfrage', ['anliegen' => 'preis', 'werk' => 'nacht', 'seite' => Stack::base() . '/werk/nacht', 'name' => 'Max Test', 'email' => 'max@example.test', 'telefon' => '0123 456', 'nachricht' => 'Was kostet NACHT?', 'datenschutz' => 'ja'], ['Accept: application/json']);
         $this->assertSame(['ok' => true], $r->json());
         $this->assertSame(422, $c->post('/anfrage', ['name' => 'Max', 'email' => 'max@example.test', 'nachricht' => 'x'], ['Accept: application/json'])->status); // ohne Einwilligung
-        $this->assertSame(['ok' => true], $c->post('/anfrage', ['bot-field' => 'spam', 'name' => 'Bot'], ['Accept: application/json'])->json());
+        $this->assertSame(['ok' => true], $c->post('/anfrage', ['hp_a3k' => 'spam', 'name' => 'Bot'], ['Accept: application/json'])->json());
 
         $row = Db::one('SELECT * FROM anfragen ORDER BY id DESC LIMIT 1');
         $this->assertSame('preis', $row['anliegen']);
@@ -1292,5 +1292,43 @@ final class ShopTest extends TestCase
         }
         $this->assertStringContainsString('ok   Datenbank erreichbar', $out);
         $this->assertStringContainsString('ok   Verschlüsselung funktioniert', $out);
+    }
+
+    /** Neunundzwanzigstes Review: Spam-Falle verwirft keinen Widerruf still, Login setzt die IP-Grenze nicht zurück. */
+    public function testNeunundzwanzigstesReview(): void
+    {
+        // Vom Passwortmanager gefülltes verstecktes Feld: sichtbare Meldung, Eingaben bleiben stehen
+        $c = new Client("203.0.113.70");
+        $r = $c->post("/vertrag-widerrufen", ["name" => "Paula Test", "vertrag" => "Werk NACHT", "email" => "paula@example.test", "hp_w7q" => "https://example.test"]);
+        $this->assertSame(422, $r->status);
+        $this->assertStringContainsString("verstecktes Feld", $r->body);
+        $this->assertStringContainsString("Paula Test", $r->body);
+        $this->assertStringContainsString("name=\"hp_w7q\"", $c->get("/vertrag-widerrufen")->body);
+        $this->assertStringNotContainsString("name=\"website\"", $c->get("/vertrag-widerrufen")->body);
+
+        // Gültige Anmeldung löscht nicht die Fehlversuche derselben IP gegen andere Benutzer
+        $ip = new Client("203.0.113.71");
+        for ($i = 0; $i < 2; $i++) {
+            $this->assertSame(401, $ip->post("/atelier/login", ["benutzer" => "opfer", "passwort" => "falsch", "code" => "000000"])->status);
+        }
+        $this->assertSame(303, $ip->post("/atelier/login", Stack::credentials())->status);
+        $this->assertSame(401, $ip->post("/atelier/login", ["benutzer" => "opfer", "passwort" => "falsch", "code" => "000000"])->status);
+        $this->assertSame(429, $ip->post("/atelier/login", ["benutzer" => "opfer", "passwort" => "falsch", "code" => "000000"])->status, "dritter Fehlversuch zählt weiter");
+
+        // Cron: nie abgeschlossene Bestellung wird abgelaufen, SEPA-Kauf (Werk verkauft) bleibt offen
+        $id = (int) self::werk("blick")["id"];
+        Db::run("DELETE FROM bestellungen WHERE stripe_session_id IN (\"cs_alt_offen\", \"cs_alt_sepa\")");
+        Db::run("INSERT INTO bestellungen (stripe_session_id, werk_id, status, erstellt) VALUES (\"cs_alt_offen\", ?, \"offen\", UTC_TIMESTAMP() - INTERVAL 3 DAY), (\"cs_alt_sepa\", ?, \"offen\", UTC_TIMESTAMP() - INTERVAL 3 DAY)", [$id, $id]);
+        $alt = Db::one("SELECT status, verkauft_session FROM werke WHERE id = ?", [$id]);
+        Db::run("UPDATE werke SET verkauft_session = \"cs_alt_sepa\" WHERE id = ?", [$id]);
+        Db::run("DELETE FROM merker WHERE name = \"cron_taeglich\"");
+        try {
+            Stack::php("bin/cron.php");
+            $this->assertSame("abgelaufen", Db::one("SELECT status FROM bestellungen WHERE stripe_session_id = \"cs_alt_offen\"")["status"]);
+            $this->assertSame("offen", Db::one("SELECT status FROM bestellungen WHERE stripe_session_id = \"cs_alt_sepa\"")["status"]);
+        } finally {
+            Db::run("UPDATE werke SET verkauft_session = ? WHERE id = ?", [$alt["verkauft_session"], $id]);
+            Db::run("DELETE FROM bestellungen WHERE stripe_session_id IN (\"cs_alt_offen\", \"cs_alt_sepa\")");
+        }
     }
 }

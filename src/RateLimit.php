@@ -97,6 +97,18 @@ final class RateLimit
         }
     }
 
+    /** Die letzten $n gezählten Versuche eines Schlüssels zurücknehmen. */
+    public static function undoLatest(string $bucket, string $id, int $n): void
+    {
+        if ($n > 0) {
+            try {
+                Db::run('DELETE FROM rate_limits WHERE bucket = ? AND schluessel = ? ORDER BY id DESC LIMIT ' . $n, [$bucket, self::key($bucket, $id)]);
+            } catch (\Throwable $e) {
+                Log::warn('Rate-Limit nicht zurücknehmbar: ' . $e->getMessage());
+            }
+        }
+    }
+
     public static function reset(string $bucket, string $id): void
     {
         try {

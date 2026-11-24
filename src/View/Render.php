@@ -12,7 +12,7 @@ use App\Works;
  */
 final class Render
 {
-    public const ASSET_V = '19';
+    public const ASSET_V = '20';
 
     public const KIND_LABEL = ['detail' => 'Detail', 'raum' => 'Im Raum', 'ansicht' => 'Ansicht'];
 
@@ -368,7 +368,7 @@ final class Render
     <input type="hidden" name="anliegen" value="allgemein">
     <input type="hidden" name="werk" value="">
     <input type="hidden" name="seite" value="">
-    <p class="visually-hidden"><label>Nicht ausfüllen: <input name="bot-field" tabindex="-1" autocomplete="off"></label></p>
+    <p class="visually-hidden"><label>Nicht ausfüllen: <input name="hp_a3k" tabindex="-1" autocomplete="off"></label></p>
     <button type="button" class="inq-close" data-inquiry-close aria-label="Schließen">×</button>
     <p class="eyebrow" data-inq-eyebrow>Anfrage</p>
     <h2 id="inq-h" class="display" data-inq-title>Schreiben Sie mir</h2>

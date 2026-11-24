@@ -318,6 +318,17 @@
         // eigene Reservierung (z. B. nach „Zurück“ aus der Bezahlung): weiterzahlen statt gesperrt
         const resume = $('[data-resume]');
         if (resume) { resume.hidden = false; const note = $('[data-reserved-note]'); if (note) note.hidden = true; }
+      } else if (st === 'available' && art.dataset.workStatus === 'reserved') {
+        // Seite kam (zwischengespeichert) als reserviert, das Werk ist wieder frei: zum Neuladen einladen
+        const note = $('[data-reserved-note]');
+        if (note && !note.dataset.freed) {
+          note.dataset.freed = '1';
+          note.textContent = 'Das Werk ist wieder verfügbar. ';
+          const a = document.createElement('a');
+          a.href = location.pathname + '?frei=' + Date.now();
+          a.textContent = 'Seite neu laden';
+          note.append(a);
+        }
       } else if (st && st !== art.dataset.workStatus && st !== 'available') {
         const form = $('[data-checkout]');
         if (form) {

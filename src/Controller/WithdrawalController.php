@@ -38,7 +38,7 @@ final class WithdrawalController
   <p>Sie haben ein Werk gekauft und möchten den Kauf innerhalb der Widerrufsfrist widerrufen? Füllen Sie die drei Felder aus und klicken Sie auf „Widerruf bestätigen“. Einen Grund müssen Sie nicht angeben. Sie erhalten sofort eine Eingangsbestätigung per E-Mail.</p>
   $err
   <form method="post" action="/vertrag-widerrufen" class="withdraw-form" novalidate>
-    <p class="hp" aria-hidden="true"><label>Bitte leer lassen <input name="website" tabindex="-1" autocomplete="off"></label></p>
+    <p class="hp" aria-hidden="true"><label>Bitte leer lassen <input name="hp_w7q" tabindex="-1" autocomplete="off"></label></p>
     <label class="field"><span>Ihr Name *</span><input name="name" required maxlength="120" autocomplete="name" value="{$v('name')}"></label>
     <label class="field"><span>Welchen Kauf möchten Sie widerrufen? *</span><input name="vertrag" required maxlength="300" value="{$v('vertrag')}" placeholder="z. B. Werk „NACHT“, gekauft am 20.11.2026"><small>Titel des Werks, Kaufdatum oder Bestellnummer aus der Kaufbestätigung</small></label>
     <label class="field"><span>Ihre E-Mail-Adresse für die Eingangsbestätigung *</span><input name="email" type="email" required maxlength="200" autocomplete="email" value="{$v('email')}"></label>
@@ -108,8 +108,11 @@ HTML,
         }
         $g = fn (string $k, int $n) => mb_substr(trim(preg_replace('/\s+/u', ' ', Http::post($k, $n * 2)) ?? ''), 0, $n);
         $values = ['name' => $g('name', 120), 'vertrag' => $g('vertrag', 300), 'email' => mb_strtolower($g('email', 200))];
-        if ($g('website', 100) !== '') {
-            Http::html(self::formPage()); // Spam-Falle
+        if ($g('hp_w7q', 100) !== '') {
+            // Spam-Falle: nicht still verwerfen (ein gesetzlich geschuldeter Widerruf darf nicht verloren gehen),
+            // sondern sichtbar ablehnen, mit dem Weg per E-Mail
+            Log::warn('Widerruf: Spam-Falle ausgefüllt, abgelehnt');
+            Http::html(self::formPage($values, "Ihr Widerruf konnte nicht angenommen werden, weil ein verstecktes Feld ausgefüllt war (z. B. vom Passwortmanager). Bitte senden Sie das Formular erneut oder Ihren Widerruf per E-Mail an {$cfg['contactEmail']}."), 422);
         }
         if ($values['name'] === '' || $values['vertrag'] === '' || !\App\Mailer::validAddress($values['email'])) {
             Http::html(self::formPage($values, 'Bitte Name, den betroffenen Kauf und eine gültige E-Mail-Adresse angeben (ohne Umlaute, z. B. joerg@… statt jörg@…).'), 422);
