@@ -12,7 +12,7 @@ use App\Works;
  */
 final class Render
 {
-    public const ASSET_V = '18';
+    public const ASSET_V = '19';
 
     public const KIND_LABEL = ['detail' => 'Detail', 'raum' => 'Im Raum', 'ansicht' => 'Ansicht'];
 

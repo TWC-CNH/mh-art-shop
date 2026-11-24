@@ -336,6 +336,7 @@
       const btn = $('button', form);
       if (btn.disabled) return;
       const label = btn.innerHTML;
+      if (!btn.dataset.label) btn.dataset.label = label;
       btn.disabled = true;
       btn.classList.add('is-loading');
       btn.textContent = 'Bezahlung wird vorbereitet …';
@@ -361,7 +362,7 @@
     });
   });
   window.addEventListener('pageshow', (e) => {
-    if (e.persisted) $$('[data-checkout] button').forEach((b) => { b.disabled = false; b.classList.remove('is-loading'); b.innerHTML = 'Original kaufen <span aria-hidden="true">→</span>'; });
+    if (e.persisted) $$('[data-checkout] button').forEach((b) => { b.disabled = false; b.classList.remove('is-loading'); if (b.dataset.label) b.innerHTML = b.dataset.label; });
   });
 
   // ---------- Lightbox mit Blättern (Pfeiltasten, Wischen) ----------

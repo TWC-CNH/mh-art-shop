@@ -43,7 +43,8 @@ final class Config
             'stripeWebhookSecret' => $e('STRIPE_WEBHOOK_SECRET'),
             'stripeApiBase' => $e('STRIPE_API_BASE'), // nur für Tests gegen einen lokalen Stripe-Ersatz
             // Ohne Stripe-Schlüssel: Shop zeigt Werke, Kaufen ist gesperrt (Hinweis "Demo-Modus").
-            'demo' => $e('STRIPE_SECRET_KEY') === '',
+            // Kaufen nur mit beiden Schlüsseln: ohne Webhook-Geheimnis würde ein bezahltes Werk nie als verkauft markiert
+            'demo' => $e('STRIPE_SECRET_KEY') === '' || $e('STRIPE_WEBHOOK_SECRET') === '',
 
             'db' => [
                 'host' => $e('DB_HOST', 'localhost'),

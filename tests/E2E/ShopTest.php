@@ -1070,6 +1070,27 @@ final class ShopTest extends TestCase
         Db::run("UPDATE werke SET status = 'available', verkauft_am = NULL, verkauft_session = NULL, doppelverkauf_session = NULL, reserviert_bis = NULL, reserviert_session = NULL WHERE slug IN (?, ?, ?)", [$a, $b, $d]);
     }
 
+    /** Neunzehntes Review von PR #1 */
+    public function testNeunzehntesReview(): void
+    {
+        [$c, $csrf] = self::login('192.0.2.200');
+        $slugs = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id DESC LIMIT 2"), 'slug');
+
+        // Entfernen bei entstehender Sitzung (pending_): wird entfernt, der Checkout merkt es selbst
+        $w = self::werk($slugs[0]);
+        Db::run("UPDATE werke SET reserviert_session = 'pending_test19', reserviert_bis = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() + 600), $w['id']]);
+        $this->assertStringEndsWith('/atelier?ok=entfernt', (string) $c->post('/atelier/archivieren', ['csrf' => $csrf, 'id' => $w['id']])->header('location'));
+        $this->assertSame(0, (int) self::werk($slugs[0])['aktiv']);
+        Db::run('UPDATE werke SET aktiv = 1, reserviert_session = NULL, reserviert_bis = NULL WHERE id = ?', [$w['id']]);
+
+        // Speichern mit Eingabefehler, Werk inzwischen entfernt: kein Entwurf als „Neues Werk“
+        $w2 = self::werk($slugs[1]);
+        Db::run('UPDATE werke SET aktiv = 0 WHERE id = ?', [$w2['id']]);
+        $r = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $w2['id'], 'titel' => $w2['titel'], 'masse' => $w2['masse'], 'preis' => 'abc', 'status' => 'available', 'status_geladen' => 'available', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertStringEndsWith('/atelier?ok=nicht-mehr-da', (string) $r->header('location'));
+        Db::run('UPDATE werke SET aktiv = 1 WHERE id = ?', [$w2['id']]);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

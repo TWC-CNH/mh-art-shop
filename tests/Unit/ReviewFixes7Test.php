@@ -68,6 +68,19 @@ final class ReviewFixes7Test extends TestCase
         }
     }
 
+    /** Neunzehntes Review: ohne Webhook-Geheimnis ist Kaufen gesperrt. */
+    public function testOhneWebhookGeheimnisKeinVerkauf(): void
+    {
+        putenv('STRIPE_WEBHOOK_SECRET=');
+        \App\Config::reset();
+        try {
+            $this->assertTrue(\App\Config::get()['demo']);
+        } finally {
+            Stack::applyToProcess();
+        }
+        $this->assertFalse(\App\Config::get()['demo']);
+    }
+
     public function testKontingentPlatzLaesstSichZuruecknehmen(): void
     {
         $a = RateLimit::hit('test-undo', 'x@example.test', 2, 600);

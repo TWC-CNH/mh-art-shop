@@ -735,6 +735,9 @@ final class AtelierController
                 if (isset($r['error'])) {
                     $id = (int) Http::post('id', 12);
                     $prev = $id ? Catalog::byIdForAtelier($id) : null;
+                    if ($id && !$prev) {
+                        Http::redirect('/atelier?ok=nicht-mehr-da'); // sonst würde der Entwurf als neues Werk erscheinen
+                    }
                     self::editPage(self::draft($prev), $r['error']);
                 }
                 Http::redirect('/atelier/werk/' . $r['id'] . '?ok=' . $r['msg']);
@@ -755,7 +758,12 @@ final class AtelierController
                             Http::redirect('/atelier/werk/' . $id . '?ok=entfernen-bezahlvorgang');
                         }
                     }
-                    Db::run('UPDATE werke SET aktiv = 0, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
+                    // Nur archivieren, wenn sich die Reservierung seit dem Lesen nicht geändert hat. Ist inzwischen aus einer
+                    // entstehenden (pending_) eine echte Stripe-Sitzung geworden, lieber neu versuchen lassen.
+                    $done = Db::run('UPDATE werke SET aktiv = 0, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND reserviert_session <=> ?', [$id, $r['reserviert_session'] ?? null]);
+                    if ($done === 0 && Db::one('SELECT 1 FROM werke WHERE id = ? AND aktiv = 1', [$id])) {
+                        Http::redirect('/atelier/werk/' . $id . '?ok=entfernen-bezahlvorgang');
+                    }
                 }
                 Http::redirect('/atelier?ok=entfernt');
             }
