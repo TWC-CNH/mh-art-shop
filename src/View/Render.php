@@ -947,7 +947,7 @@ final class Render
   <div>
     <p class="eyebrow">Bestellung eingegangen</p>
     <h1>Danke' . (self::t($name) ? ', ' . e($name) : '') . '. ' . ($work ? '„' . e($work['title']) . '“ gehört jetzt Ihnen.' : 'Ihr Kauf ist bestätigt.') . '</h1>
-    <p class="lead">' . (($session['payment_status'] ?? null) === 'paid' ? 'Die Zahlung ist bestätigt.' : 'Ihre Zahlung wird noch verarbeitet. Sobald sie bestätigt ist, bekommen Sie eine E-Mail.') . (self::t($email) ? ' Eine Bestätigung geht an <strong>' . e($email) . '</strong>.' : '') . '</p>
+    <p class="lead">' . (in_array($session['payment_status'] ?? null, ['paid', 'no_payment_required'], true) ? 'Die Zahlung ist bestätigt.' : 'Ihre Zahlung wird noch verarbeitet. Sobald sie bestätigt ist, bekommen Sie eine E-Mail.') . (self::t($email) ? ' Eine Bestätigung geht an <strong>' . e($email) . '</strong>.' : '') . '</p>
     <ul class="assurances">
       <li>' . ($isPickup ? 'Ich melde mich in den nächsten Tagen, um einen Abholtermin im Atelier mit Ihnen abzustimmen.' : 'Ich verpacke das Werk persönlich und versende es versichert innerhalb von ' . e($cfg['deliveryDays']) . ' Werktagen. Die Sendungsnummer bekommen Sie per E-Mail.') . '</li>
       <li>Das signierte Echtheitszertifikat liegt dem Werk bei.</li>

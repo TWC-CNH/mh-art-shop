@@ -73,7 +73,8 @@ final class InquiryController
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $ref = 'A-' . $now->format('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
         // Das Formular schickt „Titel (slug)“; den slug am Ende herauslösen (oder nur slug)
-        $slug = preg_match('/(?:^|\()([a-z0-9-]{1,140})\)?\s*$/', $d['werk'], $sm) ? $sm[1] : null;
+        $werkRaw = trim(Http::post('werk', 600)); // ungekürzt, damit auch lange slugs vollständig sind
+        $slug = preg_match('/(?:^|\()([a-z0-9-]{1,140})\)?\s*$/', $werkRaw, $sm) ? $sm[1] : null;
         if ($slug !== null && !Db::one('SELECT 1 FROM werke WHERE slug = ?', [$slug])) {
             $slug = null;
         }

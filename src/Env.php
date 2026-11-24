@@ -30,6 +30,8 @@ final class Env
                 $v = substr($v, 1, -1);
             } elseif (preg_match('/^(["\'])(.*?)\1\s+#/', $v, $q)) {
                 $v = $q[2]; // in Anführungszeichen, dahinter ein Kommentar
+            } elseif (str_starts_with($v, '#')) {
+                $v = ''; // „KEY=     # Erklärung“: leerer Wert mit Kommentar
             } else {
                 // Kommentar hinter dem Wert („KEY=wert   # Erklärung“) gehört nicht dazu.
                 // Ein # direkt im Wert (ohne Leerzeichen davor) bleibt erhalten; sonst Wert in Anführungszeichen setzen.

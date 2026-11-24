@@ -35,6 +35,7 @@ final class ReviewFixes3Test extends TestCase
             'PASS_IN_QUOTES="ein # im Wert"',
             "PASS_QUOTES_KOMMENTAR='a b' # Kommentar",
             '# KOMMENTIERT=1',
+            'T_LEER_MIT_KOMMENTAR=     # nur falls nötig',
             'LEER=',
         ]));
         try {
@@ -45,6 +46,7 @@ final class ReviewFixes3Test extends TestCase
             $this->assertSame('ein # im Wert', Env::get('PASS_IN_QUOTES'));
             $this->assertSame('a b', Env::get('PASS_QUOTES_KOMMENTAR'));
             $this->assertSame('', Env::get('KOMMENTIERT'));
+            $this->assertSame('', Env::get('T_LEER_MIT_KOMMENTAR'), 'leerer Wert mit Kommentar');
             $this->assertSame('x', Env::get('LEER', 'x'));
         } finally {
             unlink($f);

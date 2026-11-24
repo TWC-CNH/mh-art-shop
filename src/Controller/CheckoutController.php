@@ -107,6 +107,10 @@ final class CheckoutController
                 if ($open->status === 'open' && $open->url) {
                     self::reply($open->url);
                 }
+                if ($open->status === 'expired') {
+                    // eigene Sitzung ist bei Stripe abgelaufen (Webhook noch unterwegs): Reservierung freigeben, neu kaufen
+                    Catalog::release((int) $row['id'], (string) $row['reserviert_session']);
+                }
             } catch (\Throwable) {
             }
         }
@@ -344,6 +348,14 @@ final class CheckoutController
                 // damit es niemand zweites kauft. Scheitert die Zahlung später, wird es wieder frei.
                 case 'checkout.session.completed':
                 case 'checkout.session.async_payment_succeeded':
+                    $failedBefore = $event->type === 'checkout.session.completed'
+                        && ($obj->payment_status ?? '') !== 'paid'
+                        && (Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$sid])['status'] ?? '') === 'fehlgeschlagen';
+                    if ($failedBefore) {
+                        // Zustellung kam nach „Zahlung gescheitert“ an (z. B. erneuter Versuch von Stripe): nicht verkaufen
+                        Log::warn("Webhook: verspätetes completed für gescheiterte Zahlung $sid ignoriert");
+                        break;
+                    }
                     if ($werkId) {
                         $r = Catalog::markSold($werkId, $sid);
                         if ($r['alreadySold']) {

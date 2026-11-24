@@ -943,6 +943,40 @@ final class ShopTest extends TestCase
         $this->assertSame($sidD, self::werk($d)['reserviert_session'], 'abgeschlossene Zahlung: Reservierung bleibt bis zum Webhook');
     }
 
+    /** Sechzehntes Review von PR #1 */
+    public function testSechzehntesReview(): void
+    {
+        $free = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 2"), 'slug');
+        [$a, $b] = $free;
+
+        // „completed“ kommt erst nach „Zahlung gescheitert“ an: Werk wird nicht als verkauft markiert
+        self::buy($a);
+        $w = self::werk($a);
+        $obj = ['id' => $w['reserviert_session'], 'status' => 'complete', 'payment_status' => 'unpaid', 'metadata' => ['werk_id' => (string) $w['id']]];
+        Stack::webhook('checkout.session.async_payment_failed', $obj);
+        $this->assertSame('fehlgeschlagen', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$obj['id']])['status']);
+        Stack::webhook('checkout.session.completed', $obj);
+        $this->assertSame('available', self::werk($a)['status']);
+
+        // Eigene, bei Stripe schon abgelaufene Sitzung: neuer Kauf klappt sofort
+        $buyer = new Client('198.51.100.140');
+        self::buy($b, $buyer);
+        $old = self::werk($b)['reserviert_session'];
+        Stack::updateStripeSession($old, ['status' => 'expired']);
+        $again = self::buy($b, $buyer);
+        $this->assertSame(200, $again->status);
+        $this->assertNotSame($old, self::werk($b)['reserviert_session']);
+
+        // Anfrage zu einem Werk mit langem slug wird trotzdem zugeordnet
+        $long = str_repeat('langer-titel-', 8) . 'ende';
+        Db::run("INSERT INTO werke (slug, titel, masse) VALUES (?, 'Langer Titel', '')", [$long]);
+        (new Client('192.0.2.170'))->post('/anfrage', ['anliegen' => 'frage', 'werk' => str_repeat('LANGER TITEL ', 9) . "($long)", 'name' => 'Ina', 'email' => 'ina@example.test', 'nachricht' => 'Frage', 'datenschutz' => 'ja'], ['Accept: application/json']);
+        $this->assertSame($long, Db::one('SELECT werk_slug FROM anfragen ORDER BY id DESC LIMIT 1')['werk_slug']);
+
+        // Gutschein über den vollen Betrag: Danke-Seite meldet „bestätigt“
+        $this->assertStringContainsString('Die Zahlung ist bestätigt.', \App\View\Render::thanks(['status' => 'complete', 'payment_status' => 'no_payment_required', 'metadata' => []], null, false));
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');
