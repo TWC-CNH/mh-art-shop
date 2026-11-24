@@ -543,6 +543,51 @@ final class ShopTest extends TestCase
         Db::run('UPDATE werke SET aktiv = 1 WHERE id = ?', [$w['id']]);
     }
 
+    /** Sechstes Review: Werk wird entfernt, während die Stripe-Sitzung gerade entsteht. */
+    public function testWerkEntferntWaehrendSitzungEntsteht(): void
+    {
+        $w = Db::one("SELECT * FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id DESC LIMIT 1");
+        $stripe = 'http://127.0.0.1:' . Stack::STRIPE_PORT;
+        $cfg = fn (array $c) => file_get_contents("$stripe/__test/config", false, stream_context_create(['http' => ['method' => 'POST', 'header' => 'Content-Type: application/json', 'content' => json_encode($c)]]));
+        $cfg(['delay_create' => 1.5]);
+        try {
+            // Kauf startet (läuft im Hintergrund), Stripe braucht 1,5 s für die Sitzung …
+            $mh = curl_multi_init();
+            $ch = curl_init(Stack::base() . '/api/checkout');
+            curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode(['slug' => $w['slug']]), CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json', 'Origin: ' . Stack::base(), 'X-Forwarded-For: 198.51.100.210']]);
+            curl_multi_add_handle($mh, $ch);
+            $deadline = microtime(true) + 0.6;
+            do {
+                curl_multi_exec($mh, $running);
+                curl_multi_select($mh, 0.05);
+            } while (microtime(true) < $deadline);
+            $this->assertStringStartsWith('pending_', (string) self::werk($w['slug'])['reserviert_session'], 'Reservierung steht, Sitzung entsteht noch');
+
+            // … und genau jetzt entfernt Matthias das Werk (wie /atelier/archivieren)
+            Db::run('UPDATE werke SET aktiv = 0, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$w['id']]);
+
+            do {
+                curl_multi_exec($mh, $running);
+                curl_multi_select($mh, 0.1);
+            } while ($running);
+            $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            $body = json_decode((string) curl_multi_getcontent($ch), true);
+            curl_multi_remove_handle($mh, $ch);
+            curl_multi_close($mh);
+        } finally {
+            $cfg(['delay_create' => 0]);
+        }
+        $this->assertSame(409, $status);
+        $this->assertSame('vergeben', $body['error'] ?? null);
+        $sessions = Stack::stripeSessions();
+        $last = end($sessions);
+        $this->assertSame($w['slug'], $last['metadata']['slug']);
+        $this->assertSame('expired', $last['status'], 'neue Sitzung sofort geschlossen');
+        $this->assertSame('abgelaufen', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$last['id']])['status']);
+        $this->assertNull(self::werk($w['slug'])['reserviert_session']);
+        Db::run('UPDATE werke SET aktiv = 1 WHERE id = ?', [$w['id']]);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

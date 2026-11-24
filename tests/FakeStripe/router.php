@@ -28,6 +28,11 @@ $seg = array_values(array_filter(explode('/', $path)));
 if ($path === '/__test/sessions') {
     $send(200, $state['sessions']);
 }
+// Test kann Verhalten einstellen, z. B. {"delay_create": 1.5} (Sekunden Verzögerung beim Anlegen)
+if ($path === '/__test/config' && $method === 'POST') {
+    $state = array_merge($state, json_decode((string) file_get_contents('php://input'), true) ?: []);
+    $send(200, ['ok' => true]);
+}
 // Test kann eine Sitzung verändern (z. B. als bezahlt markieren): POST /__test/sessions/<id> mit JSON
 if (preg_match('#^/__test/sessions/([A-Za-z0-9_]+)$#', $path, $m) && $method === 'POST') {
     $state['sessions'][$m[1]] = array_merge($state['sessions'][$m[1]] ?? [], json_decode((string) file_get_contents('php://input'), true) ?: []);
@@ -45,6 +50,15 @@ if (($seg[1] ?? '') === 'checkout' && ($seg[2] ?? '') === 'sessions') {
         $unit = (int) ($li['price_data']['unit_amount'] ?? 0);
         if ($unit <= 0) {
             $send(400, ['error' => ['type' => 'invalid_request_error', 'message' => 'Missing price_data']]);
+        }
+        if (!empty($state['delay_create'])) {
+            // Zustand freigeben, damit der Test währenddessen weiterarbeiten kann
+            $delay = (float) $state['delay_create'];
+            flock($fh, LOCK_UN);
+            usleep((int) ($delay * 1e6));
+            flock($fh, LOCK_EX);
+            rewind($fh);
+            $state = json_decode((string) stream_get_contents($fh), true) ?: $state;
         }
         $n = ++$state['n'];
         $sid = sprintf('cs_test_%06dTEST', $n);

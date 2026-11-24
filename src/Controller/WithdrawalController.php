@@ -137,10 +137,14 @@ HTML,
         }
 
         // Je Empfänger nur wenige Bestätigungen pro Tag, damit niemand fremde Postfächer damit zuschüttet.
-        $perRecipient = RateLimit::hit('widerruf-mail', $rec['email'], $cfg['limits']['withdrawMailsPerRecipient'], 86400);
-        $mail = $perRecipient['ok']
+        // Gezählt wird erst ein erfolgreicher Versand: scheitert SMTP kurz, kann der Käufer es erneut versuchen.
+        $underLimit = RateLimit::attempts('widerruf-mail', $rec['email'], 86400) < $cfg['limits']['withdrawMailsPerRecipient'];
+        $mail = $underLimit
             ? Mailer::send($rec['email'], "Eingangsbestätigung Ihres Widerrufs ({$rec['ref']})", self::mailText($rec, $cfg), $cfg['contactEmail'])
             : ['sent' => false, 'reason' => 'Limit je Empfänger erreicht'];
+        if ($mail['sent']) {
+            RateLimit::hit('widerruf-mail', $rec['email'], PHP_INT_MAX, 86400);
+        }
         if ($stored) {
             try {
                 Db::run('UPDATE widerrufe SET mail_versendet = ? WHERE ref = ?', [$mail['sent'] ? 1 : 0, $rec['ref']]);

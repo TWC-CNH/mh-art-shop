@@ -32,6 +32,8 @@ final class Works
         }
         $s = preg_replace('/\p{Mn}+/u', '', $s) ?? $s;
         $s = trim(preg_replace('/[^a-z0-9]+/', '-', $s) ?? '', '-');
+        // Umlaute werden zu zwei Buchstaben: auf 110 Zeichen kürzen (Spalte und Adresse erlauben 140, Rest für „-2“ usw.)
+        $s = rtrim(substr($s, 0, 110), '-');
         return $s !== '' ? $s : 'werk';
     }
 

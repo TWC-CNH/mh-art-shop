@@ -162,7 +162,8 @@ final class Render
                 ? '<img src="' . e($src) . '" srcset="' . e($stem . '-xs.jpg 420w, ' . $stem . '-sm.jpg 720w, ' . $stem . '.jpg 1600w') . '" sizes="' . e($sizes) . '" ' . $attrs . '>'
                 : '<img src="' . e($src) . '" ' . $attrs . '>';
             // WebP-Varianten nur anbieten, wenn der Upload sie erzeugt hat (sonst bliebe das Bild leer)
-            if (!is_file(\App\Config::get()['uploadDir'] . '/' . basename($stem) . '.webp')) {
+            $dir = \App\Config::get()['uploadDir'] . '/' . basename($stem);
+            if (!is_file("$dir.webp") || ($sizes !== '' && (!is_file("$dir-sm.webp") || !is_file("$dir-xs.webp")))) {
                 return $img;
             }
             $set = $sizes !== '' ? $stem . '-xs.webp 420w, ' . $stem . '-sm.webp 720w, ' . $stem . '.webp 1600w' : preg_replace('/\.jpg$/iD', '.webp', $src, 1);

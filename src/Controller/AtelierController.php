@@ -465,13 +465,17 @@ final class AtelierController
                 Http::jsonOut(['error' => 'Foto konnte nicht gespeichert werden'], 500);
             }
             $written[] = $path;
-            // Zusätzlich WebP (deutlich kleiner); der Shop liefert es aus, wenn es vorhanden ist
+            // Zusätzlich WebP (deutlich kleiner); der Shop liefert es nur aus, wenn alle drei Größen da sind
             $webp = "$dir/$id$suffix.webp";
             if (function_exists('imagewebp') && @imagewebp($img, $webp, 80) && is_file($webp) && filesize($webp) > 0) {
-                $written[] = $webp;
+                $webps[] = $webp;
             } else {
+                $webpFailed = true;
                 @unlink($webp);
             }
+        }
+        if (!empty($webpFailed)) {
+            self::cleanup($webps ?? []); // WebP alle oder keine – sonst bliebe bei manchen Breiten das Bild leer
         }
         Http::jsonOut(['url' => "/bilder/$id.jpg"]);
     }

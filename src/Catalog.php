@@ -127,9 +127,10 @@ final class Catalog
     }
 
     /** Ersetzt das vorläufige Token durch die Stripe-Sitzung und setzt das endgültige Ablaufdatum. */
-    public static function attachSession(int $id, string $token, string $sessionId, int $expiresAt): void
+    /** Liefert false, wenn die Reservierung inzwischen aufgehoben wurde (Werk entfernt oder von Hand verkauft). */
+    public static function attachSession(int $id, string $token, string $sessionId, int $expiresAt): bool
     {
-        Db::run('UPDATE werke SET reserviert_session = ?, reserviert_bis = ? WHERE id = ? AND reserviert_session = ?', [$sessionId, gmdate('Y-m-d H:i:s', $expiresAt), $id, $token]);
+        return Db::run('UPDATE werke SET reserviert_session = ?, reserviert_bis = ? WHERE id = ? AND reserviert_session = ? AND aktiv = 1 AND status = \'available\'', [$sessionId, gmdate('Y-m-d H:i:s', $expiresAt), $id, $token]) === 1;
     }
 
     /** Gibt eine Reservierung frei, wenn sie zu dieser Sitzung (oder diesem Token) gehört und das Werk nicht verkauft ist. */

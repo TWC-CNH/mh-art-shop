@@ -60,7 +60,7 @@ final class CheckoutController
             exit('Forbidden'); // fremde Seiten sollen keine Reservierungen auslösen können
         }
         $cfg = Config::get();
-        $slug = mb_substr((string) (Http::json()['slug'] ?? Http::post('slug', 140)), 0, 120);
+        $slug = mb_substr((string) (Http::json()['slug'] ?? Http::post('slug', 140)), 0, 140);
         $back = fn (string $flag) => $cfg['siteUrl'] . '/werk/' . rawurlencode($slug) . "?$flag=1";
 
         if ($slug === '') {
@@ -109,7 +109,16 @@ final class CheckoutController
         try {
             $session = $s->checkout->sessions->create(self::sessionParams($work, $cfg, time() + $seconds));
             Db::run('INSERT INTO bestellungen (stripe_session_id, werk_id, betrag_cent) VALUES (?, ?, ?)', [$session->id, $work['id'], $work['priceCents']]);
-            Catalog::attachSession($work['id'], $token, $session->id, (int) $session->expires_at);
+            if (!Catalog::attachSession($work['id'], $token, $session->id, (int) $session->expires_at)) {
+                // Während die Sitzung entstand, wurde das Werk entfernt oder verkauft: Sitzung sofort schließen
+                try {
+                    $s->checkout->sessions->expire($session->id);
+                } catch (\Throwable $e2) {
+                    Log::error('Sitzung für vergebenes Werk nicht geschlossen: ' . $e2->getMessage());
+                }
+                Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ?', [$session->id]);
+                self::reply($back('vergeben'), 'vergeben', 409);
+            }
         } catch (\Throwable $e) {
             Log::error('Checkout-Fehler: ' . $e->getMessage());
             // Aufräumen: Reservierung freigeben (Token oder schon zugeordnete Sitzung) und eine bereits
@@ -203,7 +212,7 @@ final class CheckoutController
     {
         $cfg = Config::get();
         $id = Http::query('session_id');
-        $slug = mb_substr(Http::query('slug'), 0, 120);
+        $slug = mb_substr(Http::query('slug'), 0, 140);
         $target = $slug !== '' ? $cfg['siteUrl'] . '/werk/' . rawurlencode($slug) . '?abgebrochen=1' : $cfg['siteUrl'] . '/';
         $s = self::stripe();
         if ($s && preg_match('/^cs_[A-Za-z0-9_]+$/', $id)) {
