@@ -118,9 +118,10 @@ HTML,
             Http::html(self::formPage($values, 'Bitte Name, den betroffenen Kauf und eine gültige E-Mail-Adresse angeben (ohne Umlaute, z. B. joerg@… statt jörg@…).'), 422);
         }
 
-        // Missbrauchsschutz in zwei Stufen:
-        // - Bis zur normalen Grenze je IP (Standard 5/Stunde): speichern, Bestätigung an den Käufer, Meldung an Matthias.
-        // - Darüber: weiter speichern (ein echter Widerruf geht nicht verloren, er steht im Atelier), aber keine Mails –
+        // Missbrauchsschutz je IP und Stunde (gespeichert wird immer, ein echter Widerruf geht nicht verloren):
+        // - Bestätigung an den Käufer bis LIMIT_WITHDRAW_CONFIRM_PER_IP (Standard 10), zusätzlich höchstens
+        //   LIMIT_WITHDRAW_MAILS_PER_RECIPIENT (Standard 5) je Adresse und Tag.
+        // - Meldung an Matthias bis LIMIT_WITHDRAW_PER_IP (Standard 5); darüber steht der Widerruf nur im Atelier –
         //   sonst ließe sich das Shop-Postfach fluten und von Hetzner sperren.
         // - Weit darüber (10-fache Grenze): ablehnen, mit Hinweis auf den Widerruf per E-Mail.
         $ip = RateLimit::clientIp();

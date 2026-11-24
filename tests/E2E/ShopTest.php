@@ -536,7 +536,7 @@ final class ShopTest extends TestCase
 
         // Neues Werk direkt als „Verkauft“ bekommt ein Verkaufsdatum
         $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => '', 'titel' => 'Schon verkauft', 'masse' => '50 x 40 cm', 'preis' => '900', 'status' => 'sold', 'sichtbar' => 'ja', 'bilder' => '[]']);
-        $this->assertSame(gmdate('Y-m-d'), self::werk('schon-verkauft')['verkauft_am']);
+        $this->assertSame(\App\Catalog::today(), self::werk('schon-verkauft')['verkauft_am']);
 
         // Erfolgsmeldung nur aus festen Texten
         $page = $c->get('/atelier?ok=Bitte%20Passwort%20an%20boese%40example.de%20senden')->body;

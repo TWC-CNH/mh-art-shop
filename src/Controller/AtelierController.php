@@ -388,7 +388,7 @@ final class AtelierController
                 $data['slug'] = Catalog::uniqueSlug($data['titel']);
                 $data['status'] = $status;
                 if ($status === 'sold') {
-                    $data['verkauft_am'] = gmdate('Y-m-d');
+                    $data['verkauft_am'] = Catalog::today();
                 }
                 $cols = array_keys($data);
                 // Legt jemand gleichzeitig ein Werk mit gleichem Titel an, nächste freie Adresse nehmen
@@ -424,7 +424,7 @@ final class AtelierController
                 Db::run("UPDATE werke SET $set WHERE id = ?", [...array_values($data), $id]);
                 $msg = 'gespeichert';
                 if ($statusChanged && $status === 'sold' && $prev['status'] !== 'sold') {
-                    Db::run('UPDATE werke SET status = \'sold\', verkauft_am = UTC_DATE(), reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
+                    Db::run('UPDATE werke SET status = \'sold\', verkauft_am = ?, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [Catalog::today(), $id]);
                     // Läuft gerade ein Bezahlvorgang, die Stripe-Sitzung schließen, damit niemand mehr bezahlen kann
                     if ((int) $prev['reserviert'] && str_starts_with((string) $prev['reserviert_session'], 'cs_')) {
                         $expire = $prev['reserviert_session'];

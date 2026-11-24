@@ -157,6 +157,12 @@ final class Catalog
     }
 
     /** Gibt eine Reservierung frei, wenn sie zu dieser Sitzung (oder diesem Token) gehört und das Werk nicht verkauft ist. */
+    /** Heutiges Datum in deutscher Zeit (Verkaufsdatum für Buchhaltung und Atelier, nicht UTC). */
+    public static function today(): string
+    {
+        return (new \DateTimeImmutable('now', new \DateTimeZone('Europe/Berlin')))->format('Y-m-d');
+    }
+
     public static function release(int $id, string $sessionOrToken): bool
     {
         return Db::run(
@@ -184,8 +190,8 @@ final class Catalog
                 Db::run('UPDATE werke SET doppelverkauf_session = COALESCE(doppelverkauf_session, ?), reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$sessionId, $id]);
             } else {
                 Db::run(
-                    'UPDATE werke SET status = \'sold\', verkauft_am = COALESCE(verkauft_am, UTC_DATE()), verkauft_session = ?, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?',
-                    [$sessionId, $id]
+                    'UPDATE werke SET status = \'sold\', verkauft_am = COALESCE(verkauft_am, ?), verkauft_session = ?, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?',
+                    [self::today(), $sessionId, $id]
                 );
             }
             return ['alreadySold' => (bool) $already, 'expire' => $expire];
