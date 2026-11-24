@@ -34,6 +34,11 @@ final class ShopController
         $session = null;
         $work = null;
         $s = CheckoutController::stripe();
+        // Nur der Browser, der den Kauf gestartet hat (Cookie), bekommt die Seite – sonst gar keine Stripe-Abfrage
+        $mine = Http::cookie(CheckoutController::SESSION_COOKIE);
+        if ($mine === '' || !hash_equals($mine, $id)) {
+            Http::redirect('/');
+        }
         if ($s && preg_match('/^cs_[A-Za-z0-9_]+$/', $id)) {
             try {
                 $session = $s->checkout->sessions->retrieve($id)->toArray();
@@ -50,11 +55,6 @@ final class ShopController
         if (($session['status'] ?? '') !== 'complete') {
             $slug = $session['metadata']['slug'] ?? '';
             Http::redirect(is_string($slug) && $slug !== '' && $work ? '/werk/' . rawurlencode($slug) : '/');
-        }
-        // Name, E-Mail und Betrag nur für den, der den Kauf gestartet hat (Cookie); geteilte Links zeigen nur „Danke“
-        $mine = Http::cookie(CheckoutController::SESSION_COOKIE);
-        if ($mine === '' || !hash_equals($mine, (string) $session['id'])) {
-            $session = null; // auch keine Conversion für fremde Aufrufe
         }
         Http::html(Render::thanks($session, $work));
     }

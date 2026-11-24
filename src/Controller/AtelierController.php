@@ -139,10 +139,13 @@ final class AtelierController
         $statusNote = '';
         if (!$isNew && $status === 'sold' && !empty($r['verkauft_session'])) {
             $date = !empty($r['verkauft_am']) ? ' am ' . date('d.m.Y', strtotime($r['verkauft_am'])) : '';
-            $statusNote = '<p class="at-note">Über den Shop verkauft' . $date . '. Käuferdaten stehen in Stripe unter „Zahlungen“' . (!empty($r['doppelverkauf_session']) ? ' <strong>Achtung: zweite Zahlung eingegangen, bitte in Stripe erstatten.</strong>' : '') . '.</p>';
+            $statusNote = '<p class="at-note">Über den Shop verkauft' . $date . '. Käuferdaten stehen in Stripe unter „Zahlungen“.</p>';
         } elseif (!$isNew && ($w['status'] ?? '') === 'reserved') {
             $until = (new \DateTimeImmutable($r['reserviert_bis'] . ' UTC'))->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('H:i');
             $statusNote = '<p class="at-note">Gerade reserviert: Jemand ist im Bezahlvorgang (bis ' . $until . ' Uhr). Danach wird es automatisch verkauft oder wieder frei.</p>';
+        }
+        if (!$isNew && !empty($r['doppelverkauf_session'])) {
+            $statusNote .= '<p class="at-error">Achtung: Für dieses Werk ist eine zweite Zahlung eingegangen (Stripe-Sitzung ' . e($r['doppelverkauf_session']) . '). Bitte in Stripe erstatten.</p>';
         }
         $lines = fn ($list) => e(implode("\n", $list ?? []));
         $roleOpts = '';
@@ -412,7 +415,8 @@ final class AtelierController
                         $expire = $prev['reserviert_session'];
                     }
                 } elseif ($statusChanged && $status === 'available' && $prev['status'] === 'sold') {
-                    Db::run('UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL, doppelverkauf_session = NULL WHERE id = ?', [$id]);
+                    // doppelverkauf_session bleibt: die zweite Zahlung muss trotzdem erstattet werden
+                    Db::run('UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL WHERE id = ?', [$id]);
                 } elseif (!$statusChanged && $prev['status'] === 'sold' && $status !== 'sold') {
                     $msg = 'inzwischen-verkauft';
                 }

@@ -168,11 +168,11 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('Erika', $thanks->body);
         $this->assertStringContainsString('erika@example.test', $thanks->body);
         $this->assertSame('no-store', $thanks->header('cache-control'));
-        // geteilter Link ohne das Cookie des Käufers: Danke ja, aber keine persönlichen Daten
+        // geteilter Link ohne das Cookie des Käufers: keine Daten, keine Stripe-Abfrage, Weiterleitung zur Startseite
         $shared = (new Client())->get("/danke?session_id=$sid");
-        $this->assertSame(200, $shared->status);
+        $this->assertSame(303, $shared->status);
+        $this->assertSame('/', $shared->header('location'));
         $this->assertStringNotContainsString('Erika', $shared->body);
-        $this->assertStringNotContainsString('erika@example.test', $shared->body);
     }
 
     public function testAblaufUndGescheiterteZahlungGebenFrei(): void
@@ -445,9 +445,10 @@ final class ShopTest extends TestCase
         // Danke-Seite nur für abgeschlossene Bezahlvorgänge
         $this->assertSame('/', (new Client())->get('/danke')->header('location'));
         $free = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 3"), 'slug');
-        $this->assertSame(200, self::buy($free[0])->status);
+        $opener = new Client('198.51.100.95');
+        $this->assertSame(200, self::buy($free[0], $opener)->status);
         $sid = self::werk($free[0])['reserviert_session'];
-        $open = (new Client())->get("/danke?session_id=$sid");
+        $open = $opener->get("/danke?session_id=$sid");
         $this->assertSame(303, $open->status);
         $this->assertSame('/werk/' . $free[0], $open->header('location'));
 
@@ -720,6 +721,7 @@ final class ShopTest extends TestCase
         $this->assertSame(409, $status);
         $sessions = Stack::stripeSessions();
         $this->assertSame('expired', end($sessions)['status']);
+        $this->assertNull(self::werk($a)['reserviert_session'], 'vorläufige Reservierung wieder frei (12. Review)');
 
         // Atelier speichert neuen Preis bei einer noch entstehenden Sitzung: Reservierung wird aufgehoben
         [$c, $csrf] = self::login('192.0.2.130');
@@ -821,6 +823,24 @@ final class ShopTest extends TestCase
         $this->assertStringContainsString('Foto zu groß', $up->json()['error'] ?? '');
     }
 
+    /** Zwölftes Review von PR #1 */
+    public function testZwoelftesReview(): void
+    {
+        // slug als Liste statt Text: sauber abgelehnt, keine PHP-Warnung
+        $r = (new Client('198.51.100.96'))->postJson('/api/checkout', ['slug' => [1]]);
+        $this->assertSame(400, $r->status);
+
+        // Erstattungshinweis bleibt, auch wenn das Werk wieder auf „Verfügbar“ gestellt wird
+        [$c, $csrf] = self::login('192.0.2.160');
+        $w = self::werk('frei');
+        Db::run("UPDATE werke SET status = 'sold', verkauft_session = 'cs_a', doppelverkauf_session = 'cs_test_zweitzahlung' WHERE id = ?", [$w['id']]);
+        $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $w['id'], 'titel' => $w['titel'], 'masse' => $w['masse'], 'status' => 'available', 'status_geladen' => 'sold', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $after = self::werk('frei');
+        $this->assertSame('available', $after['status']);
+        $this->assertSame('cs_test_zweitzahlung', $after['doppelverkauf_session']);
+        $this->assertStringContainsString('zweite Zahlung eingegangen', $c->get('/atelier/werk/' . $w['id'])->body);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');
@@ -915,9 +935,13 @@ final class ShopTest extends TestCase
         for ($i = 0; $i < 5; $i++) {
             $this->assertSame(303, $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => "opfer$i@example.test"])->status);
         }
+        // 6. Widerruf von derselben IP: wird trotzdem gespeichert und gemeldet, nur keine Bestätigungsmail an die Adresse
+        $count = (int) Db::one('SELECT COUNT(*) AS n FROM widerrufe')['n'];
         $blocked = $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => 'opfer9@example.test']);
-        $this->assertSame(429, $blocked->status);
-        $this->assertStringContainsString('per E-Mail an', $blocked->body);
+        $this->assertSame(303, $blocked->status);
+        $this->assertSame($count + 1, (int) Db::one('SELECT COUNT(*) AS n FROM widerrufe')['n']);
+        $this->assertCount(0, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer9@example.test'), 'keine Mail an die Adresse');
+        $this->assertNotEmpty(array_filter(Stack::mails(), fn ($m) => $m['replyTo'] === 'opfer9@example.test'), 'Matthias wird informiert');
 
         // Je Empfänger höchstens 2 Bestätigungen pro Tag; der Widerruf wird trotzdem gespeichert
         foreach (['203.0.113.31', '203.0.113.32', '203.0.113.33'] as $i => $addr) {

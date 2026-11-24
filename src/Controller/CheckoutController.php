@@ -61,7 +61,8 @@ final class CheckoutController
             exit('Forbidden'); // fremde Seiten sollen keine Reservierungen auslösen können
         }
         $cfg = Config::get();
-        $slug = mb_substr((string) (Http::json()['slug'] ?? Http::post('slug', 140)), 0, 140);
+        $raw = Http::json()['slug'] ?? Http::post('slug', 140);
+        $slug = is_string($raw) ? mb_substr($raw, 0, 140) : '';
         $back = fn (string $flag) => $cfg['siteUrl'] . '/werk/' . rawurlencode($slug) . "?$flag=1";
 
         if ($slug === '') {
@@ -107,6 +108,16 @@ final class CheckoutController
         }
         $slot = $limit['id'] ?? null;
 
+        // Nach der Reservierung frisch lesen: Preis, Versand und Maße könnten sich seit dem ersten Lesen geändert haben.
+        // Ab jetzt sieht das Atelier die Reservierung und beendet sie bei weiteren Änderungen selbst.
+        $fresh = Catalog::bySlug($slug);
+        if (!$fresh || $fresh['id'] !== $work['id'] || $fresh['priceCents'] === null) {
+            Catalog::release($work['id'], $token);
+            RateLimit::undo($slot);
+            self::reply($back('vergeben'), 'vergeben', 409);
+        }
+        $work = $fresh;
+
         $session = null;
         try {
             $session = $s->checkout->sessions->create(self::sessionParams($work, $cfg, time() + $seconds));
@@ -119,6 +130,7 @@ final class CheckoutController
                     Log::error('Sitzung für vergebenes Werk nicht geschlossen: ' . $e2->getMessage());
                 }
                 Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ?', [$session->id]);
+                Catalog::release($work['id'], $token); // eigene vorläufige Reservierung nicht stehen lassen
                 RateLimit::undo($slot);
                 self::reply($back('vergeben'), 'vergeben', 409);
             }

@@ -113,11 +113,9 @@ HTML,
         }
 
         // Missbrauchsschutz: Das Formular verschickt Mails über das Shop-Postfach an frei eingegebene Adressen.
+        // Ein Widerruf wird nie abgewiesen (§ 356a BGB): gespeichert und an Matthias gemeldet wird immer.
+        // Die Begrenzung je IP gilt nur für die Bestätigungsmail an die eingegebene Adresse (Schutz vor Mail-Missbrauch).
         $perIp = RateLimit::hit('widerruf-ip', RateLimit::clientIp(), $cfg['limits']['withdrawPerIp'], 3600);
-        if (!$perIp['ok']) {
-            header('Retry-After: ' . $perIp['retryAfter']);
-            Http::html(self::formPage($values, "Von Ihrem Anschluss wurden gerade sehr viele Widerrufe abgeschickt. Bitte versuchen Sie es später noch einmal oder senden Sie Ihren Widerruf per E-Mail an {$cfg['contactEmail']}."), 429);
-        }
 
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $rec = [
@@ -142,10 +140,10 @@ HTML,
         // Je Empfänger nur wenige Bestätigungen pro Tag, damit niemand fremde Postfächer damit zuschüttet.
         // Platz im Kontingent atomar reservieren (auch bei gleichzeitigen Anfragen höchstens N Mails) und
         // bei gescheitertem Versand zurückgeben, damit ein erneuter Versuch nach SMTP-Ausfall möglich bleibt.
-        $slot = RateLimit::hit('widerruf-mail', $rec['email'], $cfg['limits']['withdrawMailsPerRecipient'], 86400);
+        $slot = $perIp['ok'] ? RateLimit::hit('widerruf-mail', $rec['email'], $cfg['limits']['withdrawMailsPerRecipient'], 86400) : ['ok' => false];
         $mail = $slot['ok']
             ? Mailer::send($rec['email'], "Eingangsbestätigung Ihres Widerrufs ({$rec['ref']})", self::mailText($rec, $cfg), $cfg['contactEmail'])
-            : ['sent' => false, 'reason' => 'Limit je Empfänger erreicht'];
+            : ['sent' => false, 'reason' => $perIp['ok'] ? 'Limit je Empfänger erreicht' : 'Limit je IP erreicht'];
         if ($slot['ok'] && !$mail['sent']) {
             RateLimit::undo($slot['id'] ?? null);
         }
