@@ -116,7 +116,8 @@ export default async function handler(req, context) {
   };
 
   const key = now.toISOString().replace(/[:.]/g, '-') + '_' + rec.ref;
-  try { await putRecord('widerrufe', key, rec); } catch (e) { console.error('Widerruf speichern fehlgeschlagen', e); }
+  let stored = true;
+  try { await putRecord('widerrufe', key, rec); } catch (e) { stored = false; console.error('Widerruf speichern fehlgeschlagen:', e.message); }
 
   const subject = `Eingangsbestätigung Ihres Widerrufs (${rec.ref})`;
   // Je Empfänger nur wenige Bestätigungen pro Tag, damit niemand fremde Postfächer damit zuschüttet.
@@ -130,7 +131,7 @@ export default async function handler(req, context) {
     to: cfg.contactEmail,
     replyTo: rec.email,
     subject: `Widerruf eingegangen: ${rec.contract}`,
-    text: `Über den Shop ist ein Widerruf eingegangen.\n\nName: ${rec.name}\nKauf: ${rec.contract}\nE-Mail: ${rec.email}\nEingang: ${rec.receivedLabel}\nVorgang: ${rec.ref}\n\nEingangsbestätigung an den Käufer: ${mail.sent ? 'versendet' : 'NICHT versendet (' + (mail.reason || '') + ')'}\n\nNächste Schritte: Rückgabe abstimmen, nach Erhalt in Stripe erstatten und das Werk im Atelier wieder auf „Verfügbar“ stellen.`,
+    text: `Über den Shop ist ein Widerruf eingegangen.\n\nName: ${rec.name}\nKauf: ${rec.contract}\nE-Mail: ${rec.email}\nEingang: ${rec.receivedLabel}\nVorgang: ${rec.ref}\n\nEingangsbestätigung an den Käufer: ${mail.sent ? 'versendet' : 'NICHT versendet (' + (mail.reason || '') + ')'}\n${stored ? '' : 'ACHTUNG: Der Widerruf konnte im Atelier NICHT gespeichert werden (DATA_ENCRYPTION_KEY prüfen). Bitte diese E-Mail als Nachweis aufbewahren.\n'}\nNächste Schritte: Rückgabe abstimmen, nach Erhalt in Stripe erstatten und das Werk im Atelier wieder auf „Verfügbar“ stellen.`,
   });
   console.log('Widerruf eingegangen', rec.ref, 'Mail:', mail.sent);
   return new Response(donePage(rec, mail.sent), { headers: NOSTORE });

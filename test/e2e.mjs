@@ -16,6 +16,7 @@ Object.assign(process.env, {
   STRIPE_API_BASE: `http://localhost:${PORT}`,
   STRIPE_WEBHOOK_SECRET: 'whsec_test_secret',
   SITE_URL: 'https://shop.example.test',
+  DATA_ENCRYPTION_KEY: 'a'.repeat(64),
 });
 
 const fake = await startFakeStripe(PORT);
@@ -347,6 +348,54 @@ try {
     const cookie = (await atelier(new Request(O + '/atelier/login', { method: 'POST', headers: { origin: O }, body: fd }))).headers.get('set-cookie').split(';')[0];
     const list = await (await atelier(new Request(O + '/atelier/widerrufe', { headers: { cookie } }))).text();
     assert.match(list, /Erika Muster/);
+  });
+
+  await step('Widerrufe liegen verschlüsselt im Speicher (AES-256-GCM)', async () => {
+    const { readdir, readFile, writeFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const dir = join(process.env.RECORDS_LOCAL_DIR, 'widerrufe');
+    const files = await readdir(dir);
+    assert.ok(files.length >= 1);
+    const raw = await readFile(join(dir, files[0]), 'utf8');
+    assert.doesNotMatch(raw, /Erika|Muster|example\.test|NACHT/); // kein Klartext auf der Platte
+    const box = JSON.parse(raw);
+    assert.equal(box.enc, 'v1');
+    assert.ok(box.iv && box.tag && box.ct && box.kid);
+
+    const O = 'https://shop.example.test';
+    const atelier = (await import('../netlify/functions/atelier.mjs')).default;
+    const fd = new FormData(); fd.set('passwort', 'Pinsel-2026');
+    const cookie = (await atelier(new Request(O + '/atelier/login', { method: 'POST', headers: { origin: O, 'x-nf-client-connection-ip': '192.0.2.50' }, body: fd }))).headers.get('set-cookie').split(';')[0];
+    const view = async () => (await atelier(new Request(O + '/atelier/widerrufe', { headers: { cookie } }))).text();
+
+    // Manipulierter Eintrag wird erkannt und nicht angezeigt
+    const tampered = { ...box, ct: Buffer.from('x' + Buffer.from(box.ct, 'base64').toString('latin1').slice(1), 'latin1').toString('base64') };
+    await writeFile(join(dir, files[0]), JSON.stringify(tampered));
+    assert.match(await view(), /lassen sich mit dem aktuellen Schlüssel nicht entschlüsseln/);
+    await writeFile(join(dir, files[0]), raw);
+
+    // Schlüsselwechsel: alter Schlüssel als _OLD hält alte Einträge lesbar
+    process.env.DATA_ENCRYPTION_KEY = 'b'.repeat(64);
+    process.env.DATA_ENCRYPTION_KEY_OLD = 'a'.repeat(64);
+    const fd2 = new FormData(); fd2.set('passwort', 'Pinsel-2026');
+    const cookie2 = (await atelier(new Request(O + '/atelier/login', { method: 'POST', headers: { origin: O, 'x-nf-client-connection-ip': '192.0.2.51' }, body: fd2 }))).headers.get('set-cookie').split(';')[0];
+    assert.match(await (await atelier(new Request(O + '/atelier/widerrufe', { headers: { cookie: cookie2 } }))).text(), /Erika Muster/);
+    delete process.env.DATA_ENCRYPTION_KEY_OLD;
+    process.env.DATA_ENCRYPTION_KEY = 'a'.repeat(64);
+
+    // Ohne Schlüssel: nichts im Klartext speichern, Atelier warnt
+    delete process.env.DATA_ENCRYPTION_KEY;
+    try {
+      const widerruf = (await import('../netlify/functions/widerruf.mjs')).default;
+      const before = (await readdir(dir)).length;
+      const f = new FormData(); f.set('name', 'Ohne Schluessel'); f.set('vertrag', 'Werk X'); f.set('email', 'ohne@example.test');
+      const r = await widerruf(new Request(O + '/vertrag-widerrufen', { method: 'POST', headers: { origin: O, 'x-nf-client-connection-ip': '192.0.2.60' }, body: f }));
+      assert.equal(r.status, 200); // Käufer bekommt trotzdem seine Bestätigungsseite
+      assert.equal((await readdir(dir)).length, before);
+      assert.match(await view(), /kein Schlüssel für die Verschlüsselung eingerichtet/);
+    } finally {
+      process.env.DATA_ENCRYPTION_KEY = 'a'.repeat(64);
+    }
   });
 
   await step('Missbrauchsschutz: Reservierungen, Atelier-Login und Widerrufe je IP begrenzt', async () => {

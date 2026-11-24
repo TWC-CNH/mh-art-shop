@@ -6,6 +6,7 @@ import { stripe, fromStripeProduct, slugify, euro } from '../../lib/catalog.mjs'
 import { purgeCatalogCache } from '../../lib/reserve.mjs';
 import { putImage } from '../../lib/image-store.mjs';
 import { listRecords } from '../../lib/record-store.mjs';
+import { encryptionReady } from '../../lib/data-crypto.mjs';
 import { checkPassword, loginCookie, logoutCookie, isLoggedIn, sameOrigin } from '../../lib/atelier-auth.mjs';
 import { getConfig } from '../../lib/config.mjs';
 import { esc } from '../../lib/render.mjs';
@@ -327,11 +328,16 @@ export default async function handler(req, context) {
     if (path === '/atelier' && req.method === 'GET') return listPage(await allProducts(), { msg: url.searchParams.get('ok') || '' });
     if (path === '/atelier/neu' && req.method === 'GET') return editPage(null);
     if (path === '/atelier/widerrufe' && req.method === 'GET') {
-      const recs = await listRecords('widerrufe');
+      const all = await listRecords('widerrufe');
+      const recs = all.filter((r) => !r._unreadable);
+      const unreadable = all.length - recs.length;
+      const warn = !encryptionReady()
+        ? '<p class="at-error">Es ist kein Schlüssel für die Verschlüsselung eingerichtet (<code>DATA_ENCRYPTION_KEY</code>). Neue Widerrufe werden deshalb nicht gespeichert, sie kommen nur per E-Mail an.</p>'
+        : unreadable ? `<p class="at-error">${unreadable} Widerruf(e) lassen sich mit dem aktuellen Schlüssel nicht entschlüsseln. Wurde der Schlüssel gewechselt, den bisherigen als <code>DATA_ENCRYPTION_KEY_OLD</code> eintragen.</p>` : '';
       return page('Widerrufe', `<p class="at-back"><a href="/atelier">← Alle Werke</a></p>
         <div class="at-top"><div><p class="eyebrow">Nachweise</p><h1 class="display">Widerrufe</h1></div></div>
-        <p class="muted">Hier landen alle Widerrufe, die Käufer über „Vertrag widerrufen“ abgeschickt haben. Sie bekommen zusätzlich jedes Mal eine E-Mail. Nach Rückerhalt des Werks: Zahlung in Stripe erstatten und das Werk wieder auf „Verfügbar“ stellen.</p>
-        ${recs.length ? `<ul class="at-list">${recs.map((r) => `<li class="at-card at-withdraw"><strong>${esc(r.contract)}</strong><span>${esc(r.name)} · <a href="mailto:${esc(r.email)}">${esc(r.email)}</a></span><span class="muted">Eingang ${esc(r.receivedLabel)} · ${esc(r.ref)}</span></li>`).join('')}</ul>` : '<p class="at-card">Bisher keine Widerrufe.</p>'}`);
+        <p class="muted">Hier landen alle Widerrufe, die Käufer über „Vertrag widerrufen“ abgeschickt haben. Sie bekommen zusätzlich jedes Mal eine E-Mail. Nach Rückerhalt des Werks: Zahlung in Stripe erstatten und das Werk wieder auf „Verfügbar“ stellen. Die Angaben sind verschlüsselt gespeichert.</p>
+        ${warn}${recs.length ? `<ul class="at-list">${recs.map((r) => `<li class="at-card at-withdraw"><strong>${esc(r.contract)}</strong><span>${esc(r.name)} · <a href="mailto:${esc(r.email)}">${esc(r.email)}</a></span><span class="muted">Eingang ${esc(r.receivedLabel)} · ${esc(r.ref)}</span></li>`).join('')}</ul>` : '<p class="at-card">Bisher keine Widerrufe.</p>'}`);
     }
     if (path.startsWith('/atelier/werk/') && req.method === 'GET') {
       const id = path.slice('/atelier/werk/'.length);
