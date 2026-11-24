@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         cacheDirectory=".phpunit.cache"
+         executionOrder="default"
+         colors="true">
+  <php>
+    <!-- Tests lesen keine lokale .env (nur Stack liest daraus die DB-Zugangsdaten) -->
+    <env name="MH_ENV_FILE" value="none" force="true"/>
+  </php>
+  <testsuites>
+    <testsuite name="Unit">
+      <directory>tests/Unit</directory>
+    </testsuite>
+    <testsuite name="E2E">
+      <directory>tests/E2E</directory>
+    </testsuite>
+  </testsuites>
+</phpunit>

@@ -1,0 +1,37 @@
+{
+  "name": "twc/mh-art-shop",
+  "description": "Schlanker Kunst-Shop für Matthias Hübner (MH ART) – PHP, MariaDB, Stripe Checkout",
+  "type": "project",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.3",
+    "ext-gd": "*",
+    "ext-json": "*",
+    "ext-mbstring": "*",
+    "ext-pdo": "*",
+    "ext-pdo_mysql": "*",
+    "ext-sodium": "*",
+    "chillerlan/php-qrcode": "^5.0",
+    "phpmailer/phpmailer": "^6.9",
+    "stripe/stripe-php": "^17.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.5"
+  },
+  "autoload": {
+    "psr-4": { "App\\": "src/" },
+    "files": ["src/helpers.php"]
+  },
+  "autoload-dev": {
+    "psr-4": { "Tests\\": "tests/" }
+  },
+  "config": {
+    "platform": { "php": "8.3.0" },
+    "optimize-autoloader": true,
+    "sort-packages": true
+  },
+  "scripts": {
+    "test": "phpunit",
+    "serve": "@php -S localhost:8888 -t public public/index.php"
+  }
+}

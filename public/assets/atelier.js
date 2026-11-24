@@ -118,6 +118,7 @@
         fd.append('full', full.blob, 'full.jpg');
         fd.append('sm', sm.blob, 'sm.jpg');
         fd.append('xs', xs.blob, 'xs.jpg');
+        fd.append('csrf', document.querySelector('meta[name="csrf"]')?.content || '');
         const res = await fetch('/atelier/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.url) throw new Error(data.error || 'Hochladen fehlgeschlagen');

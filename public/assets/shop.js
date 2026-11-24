@@ -124,7 +124,7 @@
     });
     const n = favs.size;
     $$('[data-fav-count]').forEach((c) => (c.textContent = n));
-    $$('[data-fav-link]').forEach((l) => (l.hidden = n === 0));
+    $$('[data-fav-link]').forEach((l) => { l.hidden = n === 0; l.setAttribute('aria-label', `Merkliste: ${n} ${n === 1 ? 'Werk' : 'Werke'}`); });
     $$('[data-fav-chip]').forEach((c) => { c.hidden = n === 0; c.textContent = `♥ Merkliste (${n})`; });
   };
   document.addEventListener('click', (e) => {
@@ -263,7 +263,7 @@
       btn.disabled = true;
       err.hidden = true;
       try {
-        const res = await fetch('/__forms.html', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(new FormData(form)).toString() });
+        const res = await fetch('/anfrage', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: new URLSearchParams(new FormData(form)).toString(), credentials: 'same-origin' });
         if (!res.ok) throw new Error(res.status);
         form.reset();
         form.hidden = true;
@@ -313,7 +313,23 @@
     const art = $('[data-work-slug]');
     if (art) {
       const st = data.status[art.dataset.workSlug];
-      if (st && st !== art.dataset.workStatus && st !== 'available') {
+      const mine = (data.mine || []).includes(art.dataset.workSlug);
+      if (mine) {
+        // eigene Reservierung (z. B. nach „Zurück“ aus der Bezahlung): weiterzahlen statt gesperrt
+        const resume = $('[data-resume]');
+        if (resume) { resume.hidden = false; const note = $('[data-reserved-note]'); if (note) note.hidden = true; }
+      } else if (st === 'available' && art.dataset.workStatus === 'reserved') {
+        // Seite kam (zwischengespeichert) als reserviert, das Werk ist wieder frei: zum Neuladen einladen
+        const note = $('[data-reserved-note]');
+        if (note && !note.dataset.freed) {
+          note.dataset.freed = '1';
+          note.textContent = 'Das Werk ist wieder verfügbar. ';
+          const a = document.createElement('a');
+          a.href = location.pathname + '?frei=' + Date.now();
+          a.textContent = 'Seite neu laden';
+          note.append(a);
+        }
+      } else if (st && st !== art.dataset.workStatus && st !== 'available') {
         const form = $('[data-checkout]');
         if (form) {
           form.querySelector('button').disabled = true;
@@ -331,6 +347,7 @@
       const btn = $('button', form);
       if (btn.disabled) return;
       const label = btn.innerHTML;
+      if (!btn.dataset.label) btn.dataset.label = label;
       btn.disabled = true;
       btn.classList.add('is-loading');
       btn.textContent = 'Bezahlung wird vorbereitet …';
@@ -356,7 +373,7 @@
     });
   });
   window.addEventListener('pageshow', (e) => {
-    if (e.persisted) $$('[data-checkout] button').forEach((b) => { b.disabled = false; b.classList.remove('is-loading'); b.innerHTML = 'Original kaufen <span aria-hidden="true">→</span>'; });
+    if (e.persisted) $$('[data-checkout] button').forEach((b) => { b.disabled = false; b.classList.remove('is-loading'); if (b.dataset.label) b.innerHTML = b.dataset.label; });
   });
 
   // ---------- Lightbox mit Blättern (Pfeiltasten, Wischen) ----------
@@ -417,7 +434,8 @@
       s.async = true;
       s.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tagId)}`;
       document.head.appendChild(s);
-      if (window.__mhConversion) gtag('event', 'conversion', window.__mhConversion);
+      const conv = document.getElementById('mh-conversion');
+      if (conv) { try { gtag('event', 'conversion', JSON.parse(conv.textContent)); } catch {} }
     };
     const choice = store.get('mh-consent');
     if (choice === 'grant') loadTag();
@@ -445,3 +463,6 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
   document.addEventListener('click', (e) => { if (!header.contains(e.target)) set(false); });
 })();
+
+// Drucken-Knopf (z. B. Widerrufsbestätigung), ohne Inline-Skript
+document.querySelectorAll('[data-print]').forEach((b) => b.addEventListener('click', () => window.print()));
