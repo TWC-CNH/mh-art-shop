@@ -643,3 +643,29 @@ html[data-theme='uv'] .btn-withdraw { background: var(--ink); color: var(--bg); 
 .withdraw-receipt dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .withdraw-receipt { grid-template-columns: 1fr; } .withdraw-receipt dd { margin-bottom: .5rem; } }
 @media print { .site-header, .site-footer, .btn { display: none !important; } }
+
+/* ===== Mobile-Feinschliff (Aufgaben mobile_ansicht.md) ===== */
+/* Regler: Beschriftung „Tageslicht“ versetzt nach oben, damit „Schwarzlicht“ sie auf schmalen Bildern nicht überdeckt */
+.cmp-tag--day { bottom: calc(.8rem + 2.1em); }
+@media (max-width: 560px) { .cmp-tag--day { bottom: calc(.5rem + 2.2em); } }
+
+/* Merkliste im Kopf: runder Knopf mit kleinem Zähler statt breiter Pille */
+.fav-link { position: relative; display: inline-grid; place-items: center; width: 2.4rem; height: 2.4rem; padding: 0; border-radius: 50%; font-size: 1.05rem; line-height: 1; }
+.fav-link .fav-heart { transform: translateY(.05em); }
+.fav-link .fav-count { position: absolute; top: -.3rem; right: -.35rem; min-width: 1.15rem; height: 1.15rem; padding: 0 .28rem; border-radius: 99px; background: var(--ink); color: var(--bg); font: 700 .66rem/1.15rem var(--sans); text-align: center; }
+html[data-theme='uv'] .fav-link .fav-count { background: var(--magenta); color: #000; }
+@media (max-width: 560px) { .fav-link { padding: 0; } }
+/* UV-Schalter bleibt einzeilig */
+.uv-toggle { white-space: nowrap; }
+@media (max-width: 400px) { .uv-toggle { gap: .4rem; padding: .34rem .7rem .34rem .4rem; letter-spacing: .04em; } }
+/* Lange Werktitel (z. B. SOMMERREGEN, OBERFLÄCHE) sprengen auf sehr schmalen Handys nicht die Karte */
+.card-title { overflow-wrap: anywhere; hyphens: auto; }
+@media (max-width: 380px) { .card-title { font-size: .88rem; letter-spacing: .01em; font-stretch: 108%; } }
+
+/* Barrierefreiheit: Fokus und Feldrahmen mit ausreichendem Kontrast (WCAG 2.2, mind. 3:1) */
+:root { --focus: #0b7fb0; --field-line: #8a8892; }
+html[data-theme='uv'], .blacklight { --focus: #3de0ff; --field-line: #6c6880; }
+:focus-visible { outline-color: var(--focus); }
+.cmp-range:focus-visible + .cmp-line, .cmp:focus-within .cmp-knob, .at-upload input:focus-visible + .btn { outline-color: var(--focus); }
+.field input, .field textarea, .field select, .withdraw-form input { border-color: var(--field-line); }
+.field input:focus, .field textarea:focus, .field select:focus, .withdraw-form input:focus { outline: 2px solid var(--focus); outline-offset: 1px; border-color: var(--ink); }

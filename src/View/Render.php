@@ -12,7 +12,7 @@ use App\Works;
  */
 final class Render
 {
-    public const ASSET_V = '16';
+    public const ASSET_V = '17';
 
     public const KIND_LABEL = ['detail' => 'Detail', 'raum' => 'Im Raum', 'ansicht' => 'Ansicht'];
 
@@ -158,9 +158,15 @@ final class Render
     {
         if (self::isAtelierImg($src)) {
             $stem = preg_replace('/(-sm|-xs)?\.jpg$/iD', '', $src, 1);
-            return $sizes !== ''
+            $img = $sizes !== ''
                 ? '<img src="' . e($src) . '" srcset="' . e($stem . '-xs.jpg 420w, ' . $stem . '-sm.jpg 720w, ' . $stem . '.jpg 1600w') . '" sizes="' . e($sizes) . '" ' . $attrs . '>'
                 : '<img src="' . e($src) . '" ' . $attrs . '>';
+            // WebP-Varianten nur anbieten, wenn der Upload sie erzeugt hat (sonst bliebe das Bild leer)
+            if (!is_file(\App\Config::get()['uploadDir'] . '/' . basename($stem) . '.webp')) {
+                return $img;
+            }
+            $set = $sizes !== '' ? $stem . '-xs.webp 420w, ' . $stem . '-sm.webp 720w, ' . $stem . '.webp 1600w' : preg_replace('/\.jpg$/iD', '.webp', $src, 1);
+            return '<picture><source type="image/webp" srcset="' . e($set) . '"' . ($sizes !== '' ? ' sizes="' . e($sizes) . '"' : '') . '>' . $img . '</picture>';
         }
         $img = '<img src="' . e($src) . '" ' . $attrs . '>';
         if (!self::isLocalImg($src)) {
@@ -243,7 +249,7 @@ final class Render
     <a href="/#kuenstler">Künstler</a>
     <a href="/#kaufen">Kaufen</a>
   </nav>
-  <a class="fav-link" href="/?filter=merkliste#werke" hidden data-fav-link aria-label="Merkliste">♡ <span data-fav-count>0</span></a>
+  <a class="fav-link" href="/?filter=merkliste#werke" hidden data-fav-link aria-label="Merkliste"><span class="fav-heart" aria-hidden="true">♡</span><span class="fav-count" data-fav-count aria-hidden="true">0</span></a>
   <button class="uv-toggle" type="button" aria-pressed="false" aria-describedby="uv-tip">
     <span class="uv-switch" aria-hidden="true"><span></span></span><span class="uv-label">UV-Licht</span>
   </button>

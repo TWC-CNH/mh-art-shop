@@ -272,6 +272,14 @@ final class ShopTest extends TestCase
         $this->assertSame(200, $shop->status);
         $this->assertMatchesRegularExpression('/2\.450\x{00A0}€/u', $shop->body);
         $this->assertStringContainsString('-sm.jpg 720w', $shop->body);
+        // Upload erzeugt zusätzlich WebP in allen drei Größen, der Shop bietet sie an
+        $stem = substr($u['url'], 0, -4);
+        $this->assertStringContainsString('<source type="image/webp" srcset="' . $stem . '-xs.webp 420w', $shop->body);
+        foreach (['', '-sm', '-xs'] as $suffix) {
+            $webp = $c->get($stem . $suffix . '.webp');
+            $this->assertSame(200, $webp->status, $suffix);
+            $this->assertSame('RIFF', substr($webp->body, 0, 4));
+        }
 
         // gleicher Titel → eigene Adresse
         $c->post('/atelier/speichern', ['bilder' => '[]', 'preis' => ''] + $form);

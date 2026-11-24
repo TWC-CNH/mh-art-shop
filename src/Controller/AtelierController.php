@@ -32,11 +32,12 @@ final class AtelierController
         echo '<!doctype html>
 <html lang="de" data-theme="day"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow"><meta name="csrf" content="' . $csrf . '"><title>' . e($title) . ' · Atelier</title>
-<link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/assets/shop.css?v=a3"><link rel="stylesheet" href="/assets/atelier.css?v=a4"></head>
+<link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/assets/shop.css?v=a5"><link rel="stylesheet" href="/assets/atelier.css?v=a5"></head>
 <body class="atelier-body">
+<a class="skip" href="#inhalt">Zum Inhalt</a>
 <header class="at-head"><a href="/atelier" class="at-brand"><img src="/assets/logo-mhart.png" alt="MH ART" height="34"> <span>Atelier</span></a>
 <nav><a href="/" target="_blank" rel="noopener">Shop ansehen ↗</a></nav></header>
-<main class="at-main">' . $body . '</main>
+<main class="at-main" id="inhalt">' . $body . '</main>
 <script src="/assets/atelier.js?v=a6" defer></script></body></html>';
         exit;
     }
@@ -431,6 +432,13 @@ final class AtelierController
                 Http::jsonOut(['error' => 'Foto konnte nicht gespeichert werden'], 500);
             }
             $written[] = $path;
+            // Zusätzlich WebP (deutlich kleiner); der Shop liefert es aus, wenn es vorhanden ist
+            $webp = "$dir/$id$suffix.webp";
+            if (function_exists('imagewebp') && @imagewebp($img, $webp, 80) && is_file($webp) && filesize($webp) > 0) {
+                $written[] = $webp;
+            } else {
+                @unlink($webp);
+            }
         }
         Http::jsonOut(['url' => "/bilder/$id.jpg"]);
     }

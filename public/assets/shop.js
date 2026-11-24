@@ -124,7 +124,7 @@
     });
     const n = favs.size;
     $$('[data-fav-count]').forEach((c) => (c.textContent = n));
-    $$('[data-fav-link]').forEach((l) => (l.hidden = n === 0));
+    $$('[data-fav-link]').forEach((l) => { l.hidden = n === 0; l.setAttribute('aria-label', `Merkliste: ${n} ${n === 1 ? 'Werk' : 'Werke'}`); });
     $$('[data-fav-chip]').forEach((c) => { c.hidden = n === 0; c.textContent = `♥ Merkliste (${n})`; });
   };
   document.addEventListener('click', (e) => {

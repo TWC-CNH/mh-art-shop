@@ -22,6 +22,7 @@ $check('PHP 8.3 oder neuer', version_compare(PHP_VERSION, '8.3.0', '>='));
 foreach (['pdo_mysql', 'sodium', 'gd', 'mbstring', 'curl', 'json'] as $ext) {
     $check("Erweiterung $ext", extension_loaded($ext), 'andere PHP-Version wählen oder Hetzner-Support');
 }
+$check('GD mit WebP (für kleinere Fotos)', function_exists('imagewebp') && !empty(gd_info()['WebP Support']), 'ohne WebP liefert der Shop nur JPG aus – funktioniert, ist aber größer');
 $check('vendor/ vorhanden (Stripe, PHPMailer)', class_exists(\Stripe\StripeClient::class) && class_exists(\PHPMailer\PHPMailer\PHPMailer::class), 'lokal composer install --no-dev und vendor/ hochladen');
 $check('.env vorhanden', is_file(dirname(__DIR__) . '/.env'));
 $check('SITE_URL mit https', str_starts_with($cfg['siteUrl'], 'https://'), 'SITE_URL=https://matthiashuebner.art');

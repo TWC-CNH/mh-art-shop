@@ -83,3 +83,6 @@
 .at-radios input[type=radio] { width: 1.1rem; padding: 0; }
 .at-note { font-size: .85rem; background: var(--wall); padding: .6rem .8rem; margin: 0 0 .6rem; width: 100%; }
 .at-withdraw { display: grid; gap: .25rem; padding: 1rem 1.2rem; } .at-top-actions { flex-wrap: wrap; }
+/* Barrierefreiheit: sichtbarer Fokus und kontrastreiche Feldrahmen auch im Atelier */
+.atelier-body .field input, .atelier-body .field textarea, .atelier-body .field select, .at-search { border-color: var(--field-line); }
+.atelier-body .field input:focus, .atelier-body .field textarea:focus, .atelier-body .field select:focus, .at-search:focus { outline: 2px solid var(--focus); outline-offset: 1px; border-color: var(--ink); }
