@@ -125,7 +125,9 @@ HTML,
             Log::warn('Widerruf: sehr viele Einsendungen von einer IP, abgelehnt');
             Http::html(self::formPage($values, "Von Ihrem Anschluss kamen gerade sehr viele Widerrufe. Bitte senden Sie Ihren Widerruf per E-Mail an {$cfg['contactEmail']}."), 429);
         }
-        $perIp = RateLimit::hit('widerruf-ip', $ip, $cfg['limits']['withdrawPerIp'], 3600);
+        // Eingangsbestätigung an den Käufer ist gesetzlich versprochen: eigene, großzügigere Grenze je IP.
+        // Wird sie trotzdem zurückgehalten, steht das in der Meldung an Matthias, der sie dann selbst schickt.
+        $perIp = RateLimit::hit('widerruf-ip', $ip, $cfg['limits']['withdrawConfirmPerIp'], 3600);
 
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $rec = [
@@ -175,7 +177,7 @@ HTML,
             $cfg['contactEmail'],
             "Widerruf eingegangen: {$rec['contract']}",
             "Über den Shop ist ein Widerruf eingegangen.\n\nName: {$rec['name']}\nKauf: {$rec['contract']}\nE-Mail: {$rec['email']}\nEingang: {$rec['receivedLabel']}\nVorgang: {$rec['ref']}\n\n"
-            . 'Eingangsbestätigung an den Käufer: ' . ($mail['sent'] ? 'versendet' : "NICHT versendet ({$mail['reason']})") . "\n"
+            . 'Eingangsbestätigung an den Käufer: ' . ($mail['sent'] ? 'versendet' : "NICHT versendet ({$mail['reason']}) – bitte dem Käufer den Eingang selbst per E-Mail bestätigen") . "\n"
             . ($stored ? '' : "ACHTUNG: Der Widerruf konnte im Atelier NICHT gespeichert werden (Datenbank / DATA_ENCRYPTION_KEY prüfen). Bitte diese E-Mail als Nachweis aufbewahren.\n")
             . "\nNächste Schritte: Rückgabe abstimmen, nach Erhalt in Stripe erstatten und das Werk im Atelier wieder auf „Verfügbar“ stellen.",
             $rec['email']

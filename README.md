@@ -62,7 +62,7 @@ Alles unter **`https://matthiashuebner.art/atelier`**, am Rechner oder am Handy.
 
 Änderungen sind sofort im Shop sichtbar.
 
-**Bei einem Verkauf** kommt die Stripe-Benachrichtigung mit Name, Adresse und Telefon des Käufers. **Bei einem Widerruf:** Rückgabe abstimmen, in Stripe erstatten und das Werk im Atelier wieder auf „Verfügbar“ stellen.
+**Bei einem Verkauf** kommt die Stripe-Benachrichtigung mit Name, Adresse und Telefon des Käufers. **Bei einem Widerruf:** Steht in der Meldung „Eingangsbestätigung … NICHT versendet“ (Mailausfall oder Missbrauchsschutz), dem Käufer den Eingang selbst per E-Mail bestätigen. Dann Rückgabe abstimmen, in Stripe erstatten und das Werk im Atelier wieder auf „Verfügbar“ stellen.
 
 ## Lokal entwickeln
 

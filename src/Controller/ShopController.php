@@ -39,7 +39,8 @@ final class ShopController
         // Browser oder Kauf in einem zweiten Tab – nur eine Bestätigung ohne persönliche Daten und ohne Conversion.
         // Abfragen bei Stripe ohne passendes Cookie sind je IP begrenzt (keine Stripe-Last durch erfundene IDs).
         $own = CheckoutController::isMine($id);
-        if (!preg_match('/^cs_[A-Za-z0-9_]+$/', $id) || (!$own && !RateLimit::hit('danke-ip', RateLimit::clientIp(), 20, 3600)['ok'])) {
+        $limit = !$own && preg_match('/^cs_[A-Za-z0-9_]+$/', $id) ? RateLimit::hit('danke-ip', RateLimit::clientIp(), 20, 3600) : ['ok' => true, 'id' => null];
+        if (!preg_match('/^cs_[A-Za-z0-9_]+$/', $id) || !$limit['ok']) {
             Http::redirect('/');
         }
         if ($s) {
@@ -59,6 +60,7 @@ final class ShopController
             $slug = $session['metadata']['slug'] ?? '';
             Http::redirect(is_string($slug) && $slug !== '' && $work ? '/werk/' . rawurlencode($slug) : '/');
         }
+        RateLimit::undo($limit['id'] ?? null); // abgeschlossener Kauf: zählt nicht gegen die Grenze (z. B. mehrere Käufer hinter einer IP)
         if (!$own) {
             // Bestätigung ja (das Werk gehört Ihnen), aber Name, E-Mail, Betrag und Conversion nur im eigenen Browser
             // Zahlungsstatus ist keine persönliche Angabe: bleibt, damit „bezahlt“ bzw. „wird verarbeitet“ stimmt

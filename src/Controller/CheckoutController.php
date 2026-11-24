@@ -363,12 +363,21 @@ final class CheckoutController
         if (!$werkId && str_starts_with($event->type, 'checkout.session.')) {
             // Sitzungen ohne werk_id (z. B. aus einer früheren Shop-Fassung mit product_id): über den slug zuordnen
             $slug = (string) ($obj->metadata['slug'] ?? '');
-            $werkId = $slug !== '' ? (int) (Db::one('SELECT id FROM werke WHERE slug = ?', [$slug])['id'] ?? 0) : 0;
-            if (!$werkId) {
-                Log::error("Webhook {$event->type} ohne zuordenbares Werk (Sitzung " . ($obj->id ?? '?') . '). Bitte im Stripe-Dashboard prüfen.');
-            } elseif (!empty($obj->id)) {
-                // Bestellzeile nachtragen, damit Betrag und Zahlungsdatum auch für solche Käufe in der Datenbank stehen
-                Db::run('INSERT IGNORE INTO bestellungen (stripe_session_id, werk_id, betrag_cent) VALUES (?, ?, ?)', [(string) $obj->id, $werkId, $obj->amount_total ?? null]);
+            try {
+                $werkId = $slug !== '' ? (int) (Db::one('SELECT id FROM werke WHERE slug = ?', [$slug])['id'] ?? 0) : 0;
+                if (!$werkId) {
+                    Log::error("Webhook {$event->type} ohne zuordenbares Werk (Sitzung " . ($obj->id ?? '?') . '). Bitte im Stripe-Dashboard prüfen.');
+                } elseif (!empty($obj->id)) {
+                    // Bestellzeile nachtragen, damit Betrag und Zahlungsdatum auch für solche Käufe in der Datenbank stehen
+                    Db::run('INSERT IGNORE INTO bestellungen (stripe_session_id, werk_id, betrag_cent) VALUES (?, ?, ?)', [(string) $obj->id, $werkId, $obj->amount_total ?? null]);
+                }
+            } catch (\Throwable $e) {
+                Log::error("Webhook {$event->id}: Zuordnung über slug fehlgeschlagen: " . $e->getMessage());
+                try {
+                    Db::run('DELETE FROM webhook_events WHERE event_id = ? AND fertig = 0', [$event->id]);
+                } catch (\Throwable) {
+                }
+                Http::jsonOut(['received' => false], 500); // Stripe stellt erneut zu
             }
         }
         $sid = (string) ($obj->id ?? '');

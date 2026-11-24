@@ -182,6 +182,11 @@ final class ShopTest extends TestCase
         $tab = $other->request('GET', "/danke?session_id=$sid", null, ['Cookie: mh_co=cs_test_anderer_kauf']);
         $this->assertSame(200, $tab->status);
         $this->assertStringNotContainsString('Erika', $tab->body);
+        // Echte Käufe ohne Cookie (viele Käufer hinter einer IP) zählen nicht gegen die Grenze
+        $office = new Client('198.51.100.96');
+        for ($i = 0; $i < 25; $i++) {
+            $this->assertSame(200, $office->get("/danke?session_id=$sid")->status, "Aufruf $i");
+        }
         // Erfundene IDs ohne Cookie: nach 20 Versuchen je IP keine Stripe-Abfragen mehr
         $prober = new Client('198.51.100.99');
         for ($i = 0; $i < 20; $i++) {
@@ -1211,26 +1216,36 @@ final class ShopTest extends TestCase
         for ($i = 0; $i < 5; $i++) {
             $this->assertSame(303, $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => "opfer$i@example.test"])->status);
         }
-        // 6. Widerruf von derselben IP: wird trotzdem gespeichert und gemeldet, nur keine Bestätigungsmail an die Adresse
+        // 6. Widerruf von derselben IP: gespeichert, Käufer bekommt die Bestätigung (eigene, höhere Grenze), Matthias keine Meldung mehr
         $count = (int) Db::one('SELECT COUNT(*) AS n FROM widerrufe')['n'];
         $blocked = $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => 'opfer9@example.test']);
         $this->assertSame(303, $blocked->status);
         $this->assertSame($count + 1, (int) Db::one('SELECT COUNT(*) AS n FROM widerrufe')['n']);
-        $this->assertCount(0, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer9@example.test'), 'keine Mail an die Adresse');
+        $this->assertCount(1, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer9@example.test'), 'Eingangsbestätigung ist gesetzlich versprochen');
+        // Über 10 Bestätigungen je IP und Stunde: keine Mail mehr an fremde Adressen
+        for ($i = 10; $i < 14; $i++) {
+            $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => "opfer$i@example.test"]);
+        }
+        $this->assertCount(1, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer13@example.test'), 'zehnte Bestätigung');
+        $w->post('/vertrag-widerrufen', ['name' => 'Max Test', 'vertrag' => 'Werk NACHT', 'email' => 'opfer14@example.test']);
+        $this->assertCount(0, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer14@example.test'), 'elfte: keine Mail');
         $this->assertEmpty(array_filter(Stack::mails(), fn ($m) => $m['replyTo'] === 'opfer9@example.test'), 'über der Grenze auch keine Meldung (kein Fluten), steht im Atelier');
         // Weit über der Grenze (10-fach) wird abgelehnt, mit Hinweis auf E-Mail
-        for ($i = 0; $i < 44; $i++) {
+        for ($i = 0; $i < 39; $i++) {
             $w->post('/vertrag-widerrufen', ['name' => 'Flut', 'vertrag' => 'X', 'email' => "flut$i@example.test"]);
         }
         $flood = $w->post('/vertrag-widerrufen', ['name' => 'Flut', 'vertrag' => 'X', 'email' => 'flut-ende@example.test']);
         $this->assertSame(429, $flood->status);
         $this->assertStringContainsString('per E-Mail an', $flood->body);
 
-        // Je Empfänger höchstens 2 Bestätigungen pro Tag; der Widerruf wird trotzdem gespeichert
-        foreach (['203.0.113.31', '203.0.113.32', '203.0.113.33'] as $i => $addr) {
+        // Je Empfänger höchstens 5 Bestätigungen pro Tag; der Widerruf wird trotzdem gespeichert und Matthias erfährt es
+        foreach (['203.0.113.31', '203.0.113.32', '203.0.113.33', '203.0.113.34', '203.0.113.35', '203.0.113.36'] as $i => $addr) {
             (new Client($addr))->post('/vertrag-widerrufen', ['name' => 'Opfer', 'vertrag' => 'X', 'email' => 'opfer-mail@example.test']);
         }
-        $this->assertCount(2, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer-mail@example.test'));
+        $this->assertCount(5, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer-mail@example.test'));
+        $meldungen = array_values(array_filter(Stack::mails(), fn ($m) => $m['replyTo'] === 'opfer-mail@example.test'));
+        $this->assertStringContainsString('NICHT versendet', end($meldungen)['text']);
+        $this->assertStringContainsString('selbst per E-Mail bestätigen', end($meldungen)['text']);
         $rows = Db::all('SELECT mail_versendet FROM widerrufe ORDER BY id DESC LIMIT 3');
         $this->assertSame(['0', '1', '1'], array_map(fn ($r) => (string) $r['mail_versendet'], $rows));
 
