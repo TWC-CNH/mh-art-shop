@@ -81,6 +81,19 @@ final class ReviewFixes7Test extends TestCase
         $this->assertFalse(\App\Config::get()['demo']);
     }
 
+    /** Siebenundzwanzigstes Review: ohne Stripe-Schlüssel gilt eine Sitzung nicht still als geschlossen. */
+    public function testSitzungSchliessenOhneStripeIstEinFehler(): void
+    {
+        putenv('STRIPE_SECRET_KEY=');
+        \App\Config::reset();
+        try {
+            $this->expectException(\RuntimeException::class);
+            \App\Controller\CheckoutController::expireSession('cs_test_offen');
+        } finally {
+            Stack::applyToProcess();
+        }
+    }
+
     public function testKontingentPlatzLaesstSichZuruecknehmen(): void
     {
         $a = RateLimit::hit('test-undo', 'x@example.test', 2, 600);

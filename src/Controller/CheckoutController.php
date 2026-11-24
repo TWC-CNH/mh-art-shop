@@ -35,6 +35,19 @@ final class CheckoutController
         return new StripeClient($opts);
     }
 
+    /**
+     * Stripe-Sitzung schließen. Ohne Stripe-Schlüssel wird nicht still „geschlossen“, sondern ein Fehler geworfen –
+     * die Aufrufer behandeln das wie ein gescheitertes Schließen (Reservierung bleibt, ehrlicher Hinweis).
+     */
+    public static function expireSession(string $sessionId): void
+    {
+        $s = self::stripe();
+        if (!$s) {
+            throw new \RuntimeException('Stripe nicht eingerichtet: Sitzung kann nicht geschlossen werden');
+        }
+        $s->checkout->sessions->expire($sessionId);
+    }
+
     /** Eigene Bezahlvorgänge dieses Browsers (Cookie, höchstens 5, durch Punkte getrennt). */
     public static function mySessions(): array
     {
@@ -380,7 +393,7 @@ final class CheckoutController
                         }
                         if ($r['expire'] !== null) {
                             try {
-                                self::stripe()?->checkout->sessions->expire($r['expire']);
+                                self::expireSession($r['expire']);
                                 Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$r['expire']]);
                             } catch (\Throwable $e) {
                                 Log::warn("Offene Sitzung {$r['expire']} nach Verkauf nicht geschlossen: " . $e->getMessage());

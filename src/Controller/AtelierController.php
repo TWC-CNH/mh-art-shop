@@ -470,7 +470,7 @@ final class AtelierController
         });
         if ($expire !== null) {
             try {
-                CheckoutController::stripe()?->checkout->sessions->expire($expire);
+                CheckoutController::expireSession($expire);
                 Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$expire]);
                 if ($releaseAfterExpire) {
                     Catalog::release((int) $r['id'], $expire);
@@ -754,7 +754,7 @@ final class AtelierController
                     $open = $r && (int) $r['reserviert'] && str_starts_with((string) $r['reserviert_session'], 'cs_') ? $r['reserviert_session'] : null;
                     if ($open !== null) {
                         try {
-                            CheckoutController::stripe()?->checkout->sessions->expire($open);
+                            CheckoutController::expireSession($open);
                             Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$open]);
                         } catch (\Throwable $e) {
                             Log::warn('Entfernen abgebrochen, Stripe-Sitzung nicht geschlossen: ' . $e->getMessage());
