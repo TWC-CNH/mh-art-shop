@@ -83,7 +83,7 @@ final class Config
             'deliveryDays' => $e('DELIVERY_DAYS', '3-7'),
 
             // Stripe verlangt für Checkout-Sitzungen mindestens 30 Minuten Laufzeit.
-            'reserveMinutes' => self::num('RESERVE_MINUTES', '30', 30),
+            'reserveMinutes' => min(1380, self::num('RESERVE_MINUTES', '30', 30)), // Stripe: 30 Minuten bis 24 Stunden
             'requireTermsConsent' => self::bool($e('STRIPE_TERMS_CONSENT', 'false')),
             'invoiceCreation' => self::bool($e('STRIPE_INVOICE_CREATION', 'false')),
             'allowPromotionCodes' => self::bool($e('ALLOW_PROMOTION_CODES', 'false')),

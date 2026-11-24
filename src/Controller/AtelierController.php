@@ -42,6 +42,23 @@ final class AtelierController
         exit;
     }
 
+    /**
+     * Erfolgsmeldung zu ?ok=<schlüssel>. Nur feste Texte, damit niemand über einen präparierten Link
+     * eigene Botschaften als offizielle Bestätigung im Atelier anzeigen lassen kann.
+     */
+    private static function okMessage(): string
+    {
+        $n = max(0, (int) Http::query('n'));
+        return match (Http::query('ok')) {
+            'angelegt' => 'Werk angelegt. Es erscheint sofort im Shop.',
+            'gespeichert' => 'Gespeichert. Der Shop zeigt die Änderung sofort.',
+            'inzwischen-verkauft' => 'Gespeichert. Achtung: Das Werk wurde inzwischen verkauft und bleibt „Verkauft“.',
+            'entfernt' => 'Werk aus dem Shop entfernt.',
+            'notfall' => "Mit Notfall-Code angemeldet. Noch $n Notfall-Code(s) übrig. Bitte die Authenticator-App neu einrichten lassen (bin/atelier-user.php 2fa).",
+            default => '',
+        };
+    }
+
     private static function csrfField(): string
     {
         return '<input type="hidden" name="csrf" value="' . e(AtelierAuth::csrfToken()) . '">';
@@ -331,10 +348,13 @@ final class AtelierController
             if ($id === 0) {
                 $data['slug'] = Catalog::uniqueSlug($data['titel']);
                 $data['status'] = $status;
+                if ($status === 'sold') {
+                    $data['verkauft_am'] = gmdate('Y-m-d');
+                }
                 $cols = array_keys($data);
                 Db::run('INSERT INTO werke (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($data));
                 $id = Db::lastId();
-                $msg = 'Werk angelegt. Es erscheint sofort im Shop.';
+                $msg = 'angelegt';
             } else {
                 $prev = Db::one('SELECT status, masse, format, thumb, reserviert_session, (reserviert_bis > UTC_TIMESTAMP()) AS reserviert FROM werke WHERE id = ? AND aktiv = 1 FOR UPDATE', [$id]);
                 if (!$prev) {
@@ -351,7 +371,7 @@ final class AtelierController
                 }
                 $set = implode(', ', array_map(fn ($c) => "$c = ?", array_keys($data)));
                 Db::run("UPDATE werke SET $set WHERE id = ?", [...array_values($data), $id]);
-                $msg = 'Gespeichert. Der Shop zeigt die Änderung sofort.';
+                $msg = 'gespeichert';
                 if ($statusChanged && $status === 'sold' && $prev['status'] !== 'sold') {
                     Db::run('UPDATE werke SET status = \'sold\', verkauft_am = UTC_DATE(), reserviert_bis = NULL, reserviert_session = NULL WHERE id = ?', [$id]);
                     // Läuft gerade ein Bezahlvorgang, die Stripe-Sitzung schließen, damit niemand mehr bezahlen kann
@@ -361,7 +381,7 @@ final class AtelierController
                 } elseif ($statusChanged && $status === 'available' && $prev['status'] === 'sold') {
                     Db::run('UPDATE werke SET status = \'available\', verkauft_am = NULL, verkauft_session = NULL, doppelverkauf_session = NULL WHERE id = ?', [$id]);
                 } elseif (!$statusChanged && $prev['status'] === 'sold' && $status !== 'sold') {
-                    $msg = 'Gespeichert. Achtung: Das Werk wurde inzwischen verkauft und bleibt „Verkauft“.';
+                    $msg = 'inzwischen-verkauft';
                 }
             }
             Db::run('DELETE FROM werk_bilder WHERE werk_id = ?', [$id]);
@@ -423,6 +443,12 @@ final class AtelierController
             if (!str_starts_with($bytes, "\xFF\xD8")) {
                 self::cleanup($written);
                 Http::jsonOut(['error' => 'Nur JPG erlaubt'], 415);
+            }
+            // Abmessungen aus dem Dateikopf prüfen, bevor das Bild im Speicher entpackt wird
+            $dim = @getimagesizefromstring($bytes);
+            if (!$dim || $dim[0] < 1 || $dim[1] < 1 || $dim[0] > 4000 || $dim[1] > 4000) {
+                self::cleanup($written);
+                Http::jsonOut(['error' => 'Foto nicht lesbar oder größer als 4000 px'], 415);
             }
             // Neu speichern: entfernt Metadaten (z. B. GPS) und alles, was kein Bild ist
             $img = @imagecreatefromstring($bytes);
@@ -543,7 +569,7 @@ final class AtelierController
                 AtelierAuth::login($user);
                 if (isset($user['_notfall_rest'])) {
                     $rest = $user['_notfall_rest'];
-                    Http::redirect('/atelier?ok=' . rawurlencode("Mit Notfall-Code angemeldet. Noch $rest Notfall-Code(s) übrig. Bitte die Authenticator-App neu einrichten lassen (bin/atelier-user.php 2fa)."));
+                    Http::redirect('/atelier?ok=notfall&n=' . (int) $rest);
                 }
                 Http::redirect('/atelier');
             }
@@ -572,7 +598,7 @@ final class AtelierController
                 Http::redirect('/atelier');
             }
             if ($path === '/atelier' && $method === 'GET') {
-                self::listPage(Http::query('ok'));
+                self::listPage(self::okMessage());
             }
             if ($path === '/atelier/neu' && $method === 'GET') {
                 self::editPage(null);
@@ -588,7 +614,7 @@ final class AtelierController
                 if (!$w) {
                     Http::redirect('/atelier');
                 }
-                self::editPage($w, '', Http::query('ok'));
+                self::editPage($w, '', self::okMessage());
             }
             if ($path === '/atelier/upload' && $method === 'POST') {
                 self::upload();
@@ -600,7 +626,7 @@ final class AtelierController
                     $prev = $id ? Catalog::byIdForAtelier($id) : null;
                     self::editPage(self::draft($prev), $r['error']);
                 }
-                Http::redirect('/atelier/werk/' . $r['id'] . '?ok=' . rawurlencode($r['msg']));
+                Http::redirect('/atelier/werk/' . $r['id'] . '?ok=' . $r['msg']);
             }
             if ($path === '/atelier/archivieren' && $method === 'POST') {
                 $id = (int) Http::post('id', 12);
@@ -621,7 +647,7 @@ final class AtelierController
                         Log::warn('Offene Stripe-Sitzung beim Entfernen nicht geschlossen: ' . $e->getMessage());
                     }
                 }
-                Http::redirect('/atelier?ok=' . rawurlencode('Werk aus dem Shop entfernt.'));
+                Http::redirect('/atelier?ok=entfernt');
             }
             Http::redirect('/atelier');
         } catch (\Throwable $e) {

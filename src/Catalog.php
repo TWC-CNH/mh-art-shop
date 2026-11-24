@@ -141,14 +141,18 @@ final class Catalog
         ) === 1;
     }
 
-    /** @return array{alreadySold: bool} */
+    /** @return array{alreadySold: bool, expire: ?string} expire = offene Stripe-Sitzung eines anderen Käufers, die zu schließen ist */
     public static function markSold(int $id, string $sessionId): array
     {
         return Db::transaction(function () use ($id, $sessionId) {
-            $r = Db::one('SELECT status, verkauft_session, doppelverkauf_session FROM werke WHERE id = ? FOR UPDATE', [$id]);
+            $r = Db::one('SELECT status, verkauft_session, doppelverkauf_session, reserviert_session FROM werke WHERE id = ? FOR UPDATE', [$id]);
             if (!$r) {
-                return ['alreadySold' => false];
+                return ['alreadySold' => false, 'expire' => null];
             }
+            // Hatte inzwischen ein anderer Käufer reserviert, muss dessen Stripe-Sitzung geschlossen werden,
+            // sonst könnte er ein bereits verkauftes Werk bezahlen.
+            $other = (string) $r['reserviert_session'];
+            $expire = str_starts_with($other, 'cs_') && $other !== $sessionId ? $other : null;
             // Schon verkauft – über eine andere Sitzung oder von Hand im Atelier (verkauft_session leer)?
             $already = $r['status'] === 'sold' && $r['verkauft_session'] !== $sessionId;
             if ($already) {
@@ -160,7 +164,7 @@ final class Catalog
                     [$sessionId, $id]
                 );
             }
-            return ['alreadySold' => (bool) $already];
+            return ['alreadySold' => (bool) $already, 'expire' => $expire];
         });
     }
 

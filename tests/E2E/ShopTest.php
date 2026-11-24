@@ -246,7 +246,8 @@ final class ShopTest extends TestCase
         $viaRecovery = new Client('192.0.2.17');
         $r = $viaRecovery->post('/atelier/login', $rec);
         $this->assertSame(303, $r->status);
-        $this->assertStringContainsString('Noch%209%20Notfall-Code', (string) $r->header('location'));
+        $this->assertStringEndsWith('/atelier?ok=notfall&n=9', (string) $r->header('location'));
+        $this->assertStringContainsString('Noch 9 Notfall-Code(s) übrig', $viaRecovery->get('/atelier?ok=notfall&n=9')->body);
         $this->assertSame(401, (new Client('192.0.2.18'))->post('/atelier/login', $rec)->status, 'Notfall-Code ein zweites Mal');
         $this->assertSame(401, (new Client('192.0.2.18'))->post('/atelier/login', ['passwort' => 'falsch-falsch'] + ['notfallcode' => $codes[1]] + $rec)->status, 'Notfall-Code ohne richtiges Passwort');
         \App\AtelierAuth::newRecoveryCodes($user[0]);
@@ -392,7 +393,8 @@ final class ShopTest extends TestCase
         Stack::webhook('checkout.session.completed', ['id' => $sid, 'status' => 'complete', 'payment_status' => 'paid', 'amount_total' => 100, 'metadata' => ['werk_id' => (string) $w['id']]]);
         $save = $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => $w['id'], 'titel' => $w['titel'] . ' ', 'masse' => $w['masse'], 'preis' => (string) ($w['preis_cent'] / 100), 'status' => 'available', 'status_geladen' => 'available', 'sichtbar' => 'ja', 'bilder' => '[]']);
         $this->assertSame(303, $save->status);
-        $this->assertStringContainsString('inzwischen%20verkauft', $save->header('location'));
+        $this->assertStringEndsWith('?ok=inzwischen-verkauft', $save->header('location'));
+        $this->assertStringContainsString('inzwischen verkauft', $c->get(parse_url($save->header('location'), PHP_URL_PATH) . '?ok=inzwischen-verkauft')->body);
         $after = self::werk($free[0]);
         $this->assertSame('sold', $after['status']);
         $this->assertSame($sid, $after['verkauft_session']);
@@ -464,6 +466,48 @@ final class ShopTest extends TestCase
         $this->assertSame(303, (new Client('198.51.100.170'))->post('/atelier/login', Stack::credentials($user))->status);
     }
 
+    /** Viertes Review von PR #1 */
+    public function testViertesReview(): void
+    {
+        // Verkauf per Webhook schließt die offene Sitzung eines zweiten Käufers
+        $slug = Db::one("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id LIMIT 1")['slug'];
+        $this->assertSame(200, self::buy($slug)->status);
+        $w = self::werk($slug);
+        $sidA = $w['reserviert_session'];
+        Db::run('UPDATE werke SET reserviert_bis = ? WHERE id = ?', [gmdate('Y-m-d H:i:s', time() - 5), $w['id']]); // A ist über der Zeit
+        $this->assertSame(200, self::buy($slug)->status);
+        $sidB = self::werk($slug)['reserviert_session'];
+        $this->assertNotSame($sidA, $sidB);
+        Stack::webhook('checkout.session.completed', ['id' => $sidA, 'status' => 'complete', 'payment_status' => 'paid', 'metadata' => ['werk_id' => (string) $w['id']]]);
+        $this->assertSame('sold', self::werk($slug)['status']);
+        $this->assertSame('expired', Stack::stripeSessions()[$sidB]['status'], 'Sitzung von B geschlossen');
+        $this->assertSame('abgelaufen', Db::one('SELECT status FROM bestellungen WHERE stripe_session_id = ?', [$sidB])['status']);
+
+        // Anfrage wird dem Werk zugeordnet, auch mit „Titel (slug)“ aus dem Formular
+        (new Client('192.0.2.90'))->post('/anfrage', ['anliegen' => 'preis', 'werk' => 'NACHT (nacht)', 'name' => 'Ina', 'email' => 'ina@example.test', 'nachricht' => 'Preis?', 'datenschutz' => 'ja'], ['Accept: application/json']);
+        $this->assertSame('nacht', Db::one('SELECT werk_slug FROM anfragen ORDER BY id DESC LIMIT 1')['werk_slug']);
+        (new Client('192.0.2.91'))->post('/anfrage', ['anliegen' => 'preis', 'werk' => 'Unbekannt (gibt-es-nicht)', 'name' => 'Ina', 'email' => 'ina@example.test', 'nachricht' => 'Preis?', 'datenschutz' => 'ja'], ['Accept: application/json']);
+        $this->assertNull(Db::one('SELECT werk_slug FROM anfragen ORDER BY id DESC LIMIT 1')['werk_slug']);
+
+        [$c, $csrf] = self::login('192.0.2.92');
+        // Riesige Abmessungen werden vor dem Entpacken abgelehnt
+        $huge = Stack::$tmp . '/riesig.jpg';
+        imagejpeg(imagecreatetruecolor(4500, 8), $huge, 10);
+        $r = $c->post('/atelier/upload', ['full' => new \CURLFile($huge), 'sm' => new \CURLFile($huge), 'xs' => new \CURLFile($huge), 'csrf' => $csrf]);
+        $this->assertSame(415, $r->status);
+        $this->assertStringContainsString('4000', $r->body);
+
+        // Neues Werk direkt als „Verkauft“ bekommt ein Verkaufsdatum
+        $c->post('/atelier/speichern', ['csrf' => $csrf, 'id' => '', 'titel' => 'Schon verkauft', 'masse' => '50 x 40 cm', 'preis' => '900', 'status' => 'sold', 'sichtbar' => 'ja', 'bilder' => '[]']);
+        $this->assertSame(gmdate('Y-m-d'), self::werk('schon-verkauft')['verkauft_am']);
+
+        // Erfolgsmeldung nur aus festen Texten
+        $page = $c->get('/atelier?ok=Bitte%20Passwort%20an%20boese%40example.de%20senden')->body;
+        $this->assertStringNotContainsString('boese@example.de', $page);
+        $this->assertStringNotContainsString('class="at-ok"', $page);
+        $this->assertStringContainsString('Werk aus dem Shop entfernt.', $c->get('/atelier?ok=entfernt')->body);
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');
@@ -495,6 +539,8 @@ final class ShopTest extends TestCase
 
     public function testAnfrageWirdVerschluesseltGespeichertUndGemeldet(): void
     {
+        $before = (int) Db::one('SELECT COUNT(*) AS n FROM anfragen')['n'];
+        $mailsBefore = count(array_filter(Stack::mails(), fn ($m) => str_starts_with($m['subject'], 'Preisanfrage')));
         $c = new Client('192.0.2.30');
         $r = $c->post('/anfrage', ['anliegen' => 'preis', 'werk' => 'nacht', 'seite' => Stack::base() . '/werk/nacht', 'name' => 'Max Test', 'email' => 'max@example.test', 'telefon' => '0123 456', 'nachricht' => 'Was kostet NACHT?', 'datenschutz' => 'ja'], ['Accept: application/json']);
         $this->assertSame(['ok' => true], $r->json());
@@ -505,10 +551,12 @@ final class ShopTest extends TestCase
         $this->assertSame('preis', $row['anliegen']);
         $this->assertSame('nacht', $row['werk_slug']);
         $this->assertStringNotContainsString('Max', $row['daten_enc']);
-        $this->assertSame(1, (int) Db::one('SELECT COUNT(*) AS n FROM anfragen')['n']); // Bot nicht gespeichert
+        $this->assertSame($before + 1, (int) Db::one('SELECT COUNT(*) AS n FROM anfragen')['n']); // Bot nicht gespeichert
         $m = array_values(array_filter(Stack::mails(), fn ($m) => str_starts_with($m['subject'], 'Preisanfrage')));
-        $this->assertCount(1, $m);
-        $this->assertSame('max@example.test', $m[0]['replyTo']);
+        $this->assertCount($mailsBefore + 1, $m, 'genau eine neue Meldung, keine für den Bot');
+        $mine = array_values(array_filter($m, fn ($x) => str_contains($x['text'], 'Was kostet NACHT?')));
+        $this->assertCount(1, $mine);
+        $this->assertSame('max@example.test', $mine[0]['replyTo']);
 
         [$a] = self::login('192.0.2.31');
         $this->assertStringContainsString('Was kostet NACHT?', $a->get('/atelier/anfragen')->body);

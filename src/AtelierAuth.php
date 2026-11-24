@@ -17,6 +17,9 @@ final class AtelierAuth
     private const DAYS = 30;
     private static ?string $token = null;
     private static ?array $user = null;
+    /** Feste Hashes eines zufälligen, nirgends gespeicherten Passworts (gleiche Parameter wie hashPassword) */
+    private const DUMMY_ARGON2ID = '$argon2id$v=19$m=65536,t=4,p=1$bHRzcHJ0WC9URzhoU2JYdA$yWxN7L2dVb+LRt0QfiZOXm6bcvOp0n76/dH5Lz8plSQ';
+    private const DUMMY_BCRYPT = '$2y$12$3F3haVSgASlKLRjSyKEM6uLr4RqhAlqm6OlBQbDRMxD6YDQ4bib1.';
 
     /** Gibt es mindestens einen aktiven Benutzer mit eingerichteter Zwei-Faktor-Anmeldung? */
     public static function configured(): bool
@@ -36,7 +39,8 @@ final class AtelierAuth
     public static function attempt(string $name, string $password, string $code): ?array
     {
         $u = Db::one('SELECT * FROM atelier_benutzer WHERE benutzer = ? AND aktiv = 1', [mb_strtolower(trim($name))]);
-        $pwOk = password_verify($password, $u['passwort_hash'] ?? self::hashPassword(bin2hex(random_bytes(8))));
+        // Bei unbekanntem Benutzer gegen einen festen Hash prüfen: gleich viel Rechenzeit wie bei einem echten
+        $pwOk = password_verify($password, $u['passwort_hash'] ?? (defined('PASSWORD_ARGON2ID') ? self::DUMMY_ARGON2ID : self::DUMMY_BCRYPT));
         if (!$u || !$pwOk || $u['totp_enc'] === null) {
             return null;
         }

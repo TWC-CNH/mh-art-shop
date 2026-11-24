@@ -263,6 +263,14 @@ final class CheckoutController
                         if ($r['alreadySold']) {
                             Log::error("ACHTUNG: Werk $werkId wurde doppelt bezahlt (Sitzung $sid). Bitte im Stripe-Dashboard erstatten.");
                         }
+                        if ($r['expire'] !== null) {
+                            try {
+                                self::stripe()?->checkout->sessions->expire($r['expire']);
+                                Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$r['expire']]);
+                            } catch (\Throwable $e) {
+                                Log::warn("Offene Sitzung {$r['expire']} nach Verkauf nicht geschlossen: " . $e->getMessage());
+                            }
+                        }
                         $paid = ($obj->payment_status ?? '') === 'paid';
                         Db::run('UPDATE bestellungen SET status = IF(status = \'bezahlt\', status, ?), betrag_cent = COALESCE(?, betrag_cent), bezahlt_am = IF(?, UTC_TIMESTAMP(), bezahlt_am) WHERE stripe_session_id = ?', [$paid ? 'bezahlt' : 'offen', $obj->amount_total ?? null, $paid ? 1 : 0, $sid]);
                     }

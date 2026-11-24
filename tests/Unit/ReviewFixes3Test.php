@@ -52,6 +52,29 @@ final class ReviewFixes3Test extends TestCase
         }
     }
 
+    /** Viertes Review: feste Vergleichs-Hashes haben dieselben Parameter wie echte Passwort-Hashes (gleiche Rechenzeit). */
+    public function testVergleichsHashPasstZuEchtenHashes(): void
+    {
+        $real = password_get_info(AtelierAuth::hashPassword('irgendein-passwort'));
+        $const = defined('PASSWORD_ARGON2ID') ? 'DUMMY_ARGON2ID' : 'DUMMY_BCRYPT';
+        $dummy = password_get_info((new \ReflectionClassConstant(AtelierAuth::class, $const))->getValue());
+        $this->assertSame($real['algo'], $dummy['algo']);
+        $this->assertEquals($real['options'], $dummy['options']);
+        $this->assertNull(AtelierAuth::attempt('gibt-es-nicht', 'egal', '123456'));
+    }
+
+    /** Viertes Review: Reservierungsdauer bleibt unter der 24-Stunden-Grenze von Stripe. */
+    public function testReservierungsdauerHatObergrenze(): void
+    {
+        putenv('RESERVE_MINUTES=5000');
+        Config::reset();
+        $this->assertLessThan(1440, Config::get()['reserveMinutes']);
+        putenv('RESERVE_MINUTES=5');
+        Config::reset();
+        $this->assertSame(30, Config::get()['reserveMinutes']);
+        putenv('RESERVE_MINUTES');
+    }
+
     public function testNurVersendbareAdressenWerdenAngenommen(): void
     {
         $this->assertTrue(Mailer::validAddress('joerg@example.de'));
