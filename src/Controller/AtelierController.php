@@ -765,6 +765,9 @@ final class AtelierController
                     if ($done === 0 && Db::one('SELECT 1 FROM werke WHERE id = ? AND aktiv = 1', [$id])) {
                         Http::redirect('/atelier/werk/' . $id . '?ok=entfernen-bezahlvorgang');
                     }
+                    if ($done === 0 || !$r) {
+                        Http::redirect('/atelier?ok=nicht-mehr-da'); // gab es nicht oder war schon entfernt
+                    }
                 }
                 Http::redirect('/atelier?ok=entfernt');
             }

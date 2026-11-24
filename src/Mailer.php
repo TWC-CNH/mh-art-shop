@@ -22,7 +22,8 @@ final class Mailer
     public static function send(string $to, string $subject, string $text, string $replyTo = ''): array
     {
         $cfg = Config::get();
-        $capture = Env::get('MAIL_CAPTURE_DIR');
+        // Nur in Test/Entwicklung: Mails als Datei ablegen statt senden (im Betrieb wirkungslos)
+        $capture = in_array($cfg['env'], ['test', 'local'], true) ? Env::get('MAIL_CAPTURE_DIR') : '';
         if ($capture !== '') {
             @mkdir($capture, 0750, true);
             file_put_contents($capture . '/' . microtime(true) . '-' . bin2hex(random_bytes(3)) . '.json', json_encode(compact('to', 'subject', 'text', 'replyTo'), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));

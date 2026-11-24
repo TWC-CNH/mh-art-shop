@@ -115,10 +115,17 @@ HTML,
             Http::html(self::formPage($values, 'Bitte Name, den betroffenen Kauf und eine gültige E-Mail-Adresse angeben (ohne Umlaute, z. B. joerg@… statt jörg@…).'), 422);
         }
 
-        // Missbrauchsschutz: Das Formular verschickt Mails über das Shop-Postfach an frei eingegebene Adressen.
-        // Ein Widerruf wird nie abgewiesen (§ 356a BGB): gespeichert und an Matthias gemeldet wird immer.
-        // Die Begrenzung je IP gilt nur für die Bestätigungsmail an die eingegebene Adresse (Schutz vor Mail-Missbrauch).
-        $perIp = RateLimit::hit('widerruf-ip', RateLimit::clientIp(), $cfg['limits']['withdrawPerIp'], 3600);
+        // Missbrauchsschutz in zwei Stufen:
+        // - Bis zur normalen Grenze je IP (Standard 5/Stunde): speichern, Bestätigung an den Käufer, Meldung an Matthias.
+        // - Darüber: weiter speichern (ein echter Widerruf geht nicht verloren, er steht im Atelier), aber keine Mails –
+        //   sonst ließe sich das Shop-Postfach fluten und von Hetzner sperren.
+        // - Weit darüber (10-fache Grenze): ablehnen, mit Hinweis auf den Widerruf per E-Mail.
+        $ip = RateLimit::clientIp();
+        if (!RateLimit::hit('widerruf-speichern', $ip, $cfg['limits']['withdrawPerIp'] * 10, 3600)['ok']) {
+            Log::warn('Widerruf: sehr viele Einsendungen von einer IP, abgelehnt');
+            Http::html(self::formPage($values, "Von Ihrem Anschluss kamen gerade sehr viele Widerrufe. Bitte senden Sie Ihren Widerruf per E-Mail an {$cfg['contactEmail']}."), 429);
+        }
+        $perIp = RateLimit::hit('widerruf-ip', $ip, $cfg['limits']['withdrawPerIp'], 3600);
 
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $rec = [
@@ -162,7 +169,7 @@ HTML,
             }
         }
 
-        $owner = Mailer::send(
+        $owner = !$perIp['ok'] && $stored ? ['sent' => false, 'reason' => 'Limit je IP (steht im Atelier)'] : Mailer::send(
             $cfg['contactEmail'],
             "Widerruf eingegangen: {$rec['contract']}",
             "Über den Shop ist ein Widerruf eingegangen.\n\nName: {$rec['name']}\nKauf: {$rec['contract']}\nE-Mail: {$rec['email']}\nEingang: {$rec['receivedLabel']}\nVorgang: {$rec['ref']}\n\n"

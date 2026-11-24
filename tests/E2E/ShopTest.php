@@ -1191,7 +1191,14 @@ final class ShopTest extends TestCase
         $this->assertSame(303, $blocked->status);
         $this->assertSame($count + 1, (int) Db::one('SELECT COUNT(*) AS n FROM widerrufe')['n']);
         $this->assertCount(0, array_filter(Stack::mails(), fn ($m) => $m['to'] === 'opfer9@example.test'), 'keine Mail an die Adresse');
-        $this->assertNotEmpty(array_filter(Stack::mails(), fn ($m) => $m['replyTo'] === 'opfer9@example.test'), 'Matthias wird informiert');
+        $this->assertEmpty(array_filter(Stack::mails(), fn ($m) => $m['replyTo'] === 'opfer9@example.test'), 'über der Grenze auch keine Meldung (kein Fluten), steht im Atelier');
+        // Weit über der Grenze (10-fach) wird abgelehnt, mit Hinweis auf E-Mail
+        for ($i = 0; $i < 44; $i++) {
+            $w->post('/vertrag-widerrufen', ['name' => 'Flut', 'vertrag' => 'X', 'email' => "flut$i@example.test"]);
+        }
+        $flood = $w->post('/vertrag-widerrufen', ['name' => 'Flut', 'vertrag' => 'X', 'email' => 'flut-ende@example.test']);
+        $this->assertSame(429, $flood->status);
+        $this->assertStringContainsString('per E-Mail an', $flood->body);
 
         // Je Empfänger höchstens 2 Bestätigungen pro Tag; der Widerruf wird trotzdem gespeichert
         foreach (['203.0.113.31', '203.0.113.32', '203.0.113.33'] as $i => $addr) {

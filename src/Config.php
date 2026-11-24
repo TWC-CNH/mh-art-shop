@@ -41,7 +41,7 @@ final class Config
             'env' => $e('APP_ENV', 'production'), // "local" schaltet Fehlerausgabe ein
             'stripeSecretKey' => $e('STRIPE_SECRET_KEY'),
             'stripeWebhookSecret' => $e('STRIPE_WEBHOOK_SECRET'),
-            'stripeApiBase' => $e('STRIPE_API_BASE'), // nur für Tests gegen einen lokalen Stripe-Ersatz
+            'stripeApiBase' => in_array($e('APP_ENV', 'production'), ['test', 'local'], true) ? $e('STRIPE_API_BASE') : '', // nur Tests
             // Ohne Stripe-Schlüssel: Shop zeigt Werke, Kaufen ist gesperrt (Hinweis "Demo-Modus").
             // Kaufen nur mit beiden Schlüsseln: ohne Webhook-Geheimnis würde ein bezahltes Werk nie als verkauft markiert
             'demo' => $e('STRIPE_SECRET_KEY') === '' || $e('STRIPE_WEBHOOK_SECRET') === '',

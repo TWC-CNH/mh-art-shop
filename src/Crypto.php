@@ -41,7 +41,11 @@ final class Crypto
         try {
             $old = self::parseKey($c['dataKeyOld'], 'DATA_ENCRYPTION_KEY_OLD');
         } catch (\Throwable $e) {
-            Log::warn($e->getMessage() . ' Der alte Schlüssel wird ignoriert.');
+            static $warned = false;
+            if (!$warned) {
+                Log::warn($e->getMessage() . ' Der alte Schlüssel wird ignoriert.');
+                $warned = true;
+            }
             $old = null;
         }
         return ['current' => $cur, 'all' => array_values(array_filter([$cur, $old]))];
