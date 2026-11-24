@@ -78,6 +78,11 @@ if (($seg[1] ?? '') === 'checkout' && ($seg[2] ?? '') === 'sessions') {
     if ($id !== null && !isset($state['sessions'][$id])) {
         $send(404, ['error' => ['type' => 'invalid_request_error', 'message' => 'No such checkout.session']]);
     }
+    if ($method === 'POST' && ($seg[4] ?? '') === 'expire' && ($state['fail_expire'] ?? null) === 'complete') {
+        // Nachstellen: genau jetzt wurde bezahlt – Sitzung ist abgeschlossen, Schließen scheitert
+        $state['sessions'][$id]['status'] = 'complete';
+        $send(400, ['error' => ['type' => 'invalid_request_error', 'message' => 'Session is not open']]);
+    }
     if ($method === 'POST' && ($seg[4] ?? '') === 'expire' && !empty($state['fail_expire'])) {
         $send(500, ['error' => ['type' => 'api_error', 'message' => 'Simulierter Ausfall beim Schließen']]);
     }

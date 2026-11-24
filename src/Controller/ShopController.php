@@ -38,8 +38,7 @@ final class ShopController
         // Eigener Browser (Cookie passt): volle Bestätigung. Sonst – z. B. Rückkehr aus der Bank-App in einem anderen
         // Browser oder Kauf in einem zweiten Tab – nur eine Bestätigung ohne persönliche Daten und ohne Conversion.
         // Abfragen bei Stripe ohne passendes Cookie sind je IP begrenzt (keine Stripe-Last durch erfundene IDs).
-        $mine = Http::cookie(CheckoutController::SESSION_COOKIE);
-        $own = $mine !== '' && hash_equals($mine, $id);
+        $own = CheckoutController::isMine($id);
         if (!preg_match('/^cs_[A-Za-z0-9_]+$/', $id) || (!$own && !RateLimit::hit('danke-ip', RateLimit::clientIp(), 20, 3600)['ok'])) {
             Http::redirect('/');
         }
@@ -87,7 +86,14 @@ final class ShopController
     {
         // Auch verkaufte Werke (bei SHOW_SOLD=false sonst nicht enthalten): gecachte Seiten sperren sonst den Kauf-Knopf nicht
         $status = Catalog::statusMap();
-        Http::jsonOut(['status' => (object) $status, 'at' => gmdate('Y-m-d\TH:i:s\Z')]);
+        // Eigene laufende Bezahlvorgänge dieses Browsers: dort darf der Knopf zurück zur Zahlung führen
+        $mine = [];
+        $sessions = CheckoutController::mySessions();
+        if ($sessions) {
+            $in = implode(',', array_fill(0, count($sessions), '?'));
+            $mine = array_column(\App\Db::all("SELECT slug FROM werke WHERE reserviert_session IN ($in) AND reserviert_bis > UTC_TIMESTAMP()", $sessions), 'slug');
+        }
+        Http::jsonOut(['status' => (object) $status, 'mine' => $mine, 'at' => gmdate('Y-m-d\TH:i:s\Z')]);
     }
 
     private static function x(mixed $t): string

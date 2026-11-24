@@ -12,7 +12,7 @@ use App\Works;
  */
 final class Render
 {
-    public const ASSET_V = '17';
+    public const ASSET_V = '18';
 
     public const KIND_LABEL = ['detail' => 'Detail', 'raum' => 'Im Raum', 'ansicht' => 'Ansicht'];
 
@@ -761,7 +761,12 @@ final class Render
             $action = '<p class="state state--sold">Dieses Werk befindet sich in einer Privatsammlung.</p>
       <a class="btn btn--ghost btn--wide" href="mailto:' . e($cfg['contactEmail']) . '?subject=' . $mailSubject . '" data-inquiry="aehnlich" ' . $inq . '>Ähnliches Werk anfragen</a>';
         } elseif ($work['status'] === 'reserved') {
-            $action = '<p class="state state--reserved">Gerade reserviert. Ein anderer Interessent ist im Bezahlvorgang. Schauen Sie in einer halben Stunde noch einmal vorbei.</p>
+            // Gehört die Reservierung diesem Browser (shop.js fragt /api/status), führt dieser Knopf zurück zur Zahlung
+            $action = '<form class="buy-form" method="post" action="/api/checkout" data-checkout data-resume hidden>
+        <input type="hidden" name="slug" value="' . e($work['slug']) . '">
+        <button class="btn btn--wide btn--buy" type="submit">Zurück zur begonnenen Zahlung <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="state state--reserved" data-reserved-note>Gerade reserviert. Ein anderer Interessent ist im Bezahlvorgang. Schauen Sie in einer halben Stunde noch einmal vorbei.</p>
       <a class="btn btn--ghost btn--wide" href="mailto:' . e($cfg['contactEmail']) . '?subject=' . $mailSubject . '&body=' . $mailBody . '" data-inquiry="warteliste" ' . $inq . '>Auf die Warteliste</a>';
         } elseif (!self::t($work['priceCents'] ?? null)) {
             $action = '<a class="btn btn--wide" href="mailto:' . e($cfg['contactEmail']) . '?subject=' . $mailSubject . '&body=' . $mailBody . '" data-inquiry="preis" ' . $inq . '>Preis anfragen</a>

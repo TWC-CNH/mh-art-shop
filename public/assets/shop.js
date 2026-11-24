@@ -313,7 +313,12 @@
     const art = $('[data-work-slug]');
     if (art) {
       const st = data.status[art.dataset.workSlug];
-      if (st && st !== art.dataset.workStatus && st !== 'available') {
+      const mine = (data.mine || []).includes(art.dataset.workSlug);
+      if (mine) {
+        // eigene Reservierung (z. B. nach „Zurück“ aus der Bezahlung): weiterzahlen statt gesperrt
+        const resume = $('[data-resume]');
+        if (resume) { resume.hidden = false; const note = $('[data-reserved-note]'); if (note) note.hidden = true; }
+      } else if (st && st !== art.dataset.workStatus && st !== 'available') {
         const form = $('[data-checkout]');
         if (form) {
           form.querySelector('button').disabled = true;

@@ -35,13 +35,35 @@ final class CheckoutController
         return new StripeClient($opts);
     }
 
+    /** Eigene Bezahlvorgänge dieses Browsers (Cookie, höchstens 5, durch Punkte getrennt). */
+    public static function mySessions(): array
+    {
+        return array_values(array_filter(explode('.', Http::cookie(self::SESSION_COOKIE)), fn ($s) => (bool) preg_match('/^cs_[A-Za-z0-9_]+$/', $s)));
+    }
+
+    public static function isMine(string $sessionId): bool
+    {
+        foreach (self::mySessions() as $s) {
+            if (hash_equals($s, $sessionId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function rememberSessions(array $ids): void
+    {
+        $ids = array_slice(array_values(array_unique($ids)), -5);
+        Http::setCookie(self::SESSION_COOKIE, implode('.', $ids), $ids ? Config::get()['reserveMinutes'] * 60 + 900 : -1, '/', 'Lax');
+    }
+
     /** Antwort für fetch (JSON) oder klassisches Formular (Weiterleitung). */
     private static function reply(string $url, string $error = '', int $status = 303, string $sessionId = ''): never
     {
         if ($sessionId !== '') {
             // Merkt sich die eigene Sitzung, damit man nach "Zurück" im Browser weiterbezahlen kann.
-            // So lange gültig wie der Bezahlvorgang (Reservierungsdauer plus Puffer)
-            Http::setCookie(self::SESSION_COOKIE, $sessionId, Config::get()['reserveMinutes'] * 60 + 900, '/', 'Lax');
+            // So lange gültig wie der Bezahlvorgang (Reservierungsdauer plus Puffer); weitere Käufe in anderen Tabs bleiben erhalten
+            self::rememberSessions([...self::mySessions(), $sessionId]);
         }
         if (Http::wantsJson()) {
             Http::jsonOut($error !== '' ? ['error' => $error] : ['url' => $url], $error !== '' ? ($status === 303 ? 400 : $status) : 200);
@@ -79,10 +101,9 @@ final class CheckoutController
         $s = self::stripe();
 
         // Eigene, noch offene Sitzung? Dann einfach dorthin zurück.
-        $mine = Http::cookie(self::SESSION_COOKIE);
-        if ((int) $row['res'] && $mine !== '' && hash_equals((string) $row['reserviert_session'], $mine)) {
+        if ((int) $row['res'] && self::isMine((string) $row['reserviert_session'])) {
             try {
-                $open = $s->checkout->sessions->retrieve($mine);
+                $open = $s->checkout->sessions->retrieve((string) $row['reserviert_session']);
                 if ($open->status === 'open' && $open->url) {
                     self::reply($open->url);
                 }
@@ -142,6 +163,10 @@ final class CheckoutController
             Catalog::release($work['id'], $token);
             if ($session) {
                 Catalog::release($work['id'], $session->id);
+                try {
+                    Db::run('UPDATE bestellungen SET status = \'abgelaufen\' WHERE stripe_session_id = ? AND status = \'offen\'', [$session->id]);
+                } catch (\Throwable) {
+                }
                 try {
                     $s->checkout->sessions->expire($session->id);
                 } catch (\Throwable $e2) {
@@ -233,16 +258,20 @@ final class CheckoutController
         $s = self::stripe();
         // Nur wer den Bezahlvorgang gestartet hat (Cookie mit derselben Sitzung), kann ihn abbrechen.
         // Ein bekannt gewordener Abbruch-Link allein reicht nicht; die Reservierung läuft dann regulär ab.
-        $mine = Http::cookie(self::SESSION_COOKIE);
-        if ($s && preg_match('/^cs_[A-Za-z0-9_]+$/', $id) && $mine !== '' && hash_equals($mine, $id)) {
+        if ($s && preg_match('/^cs_[A-Za-z0-9_]+$/', $id) && self::isMine($id)) {
             try {
                 $session = $s->checkout->sessions->retrieve($id);
                 if ($session->status === 'open') {
                     try {
                         $s->checkout->sessions->expire($id);
                     } catch (\Throwable $e) {
-                        // trotzdem freigeben: der Käufer hat abgebrochen, die Sitzung läuft bei Stripe ohnehin ab
                         Log::warn('Abbruch: Sitzung bei Stripe nicht geschlossen: ' . $e->getMessage());
+                        // Vielleicht wurde gerade doch bezahlt (anderer Tab): Status neu lesen, dann nur bei „nicht abgeschlossen“ freigeben
+                        try {
+                            $session = $s->checkout->sessions->retrieve($id);
+                        } catch (\Throwable) {
+                            // Status unbekannt: trotzdem freigeben, der Käufer hat abgebrochen; ein Verkauf kommt per Webhook
+                        }
                     }
                 }
                 $werkId = (int) ($session->metadata['werk_id'] ?? 0);
@@ -254,7 +283,7 @@ final class CheckoutController
                 Log::warn('Abbruch konnte nicht verarbeitet werden: ' . $e->getMessage());
             }
         }
-        Http::setCookie(self::SESSION_COOKIE, '', -1, '/', 'Lax');
+        self::rememberSessions(array_filter(self::mySessions(), fn ($x) => $x !== $id)); // nur diesen Vorgang vergessen
         // Den Hinweis „Reservierung aufgehoben, wieder frei“ nur zeigen, wenn das auch stimmt
         Http::redirect($slug !== '' ? $cfg['siteUrl'] . '/werk/' . rawurlencode($slug) . ($released ? '?abgebrochen=1' : '') : $cfg['siteUrl'] . '/');
     }

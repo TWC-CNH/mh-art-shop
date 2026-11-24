@@ -903,6 +903,46 @@ final class ShopTest extends TestCase
         $this->assertFileExists("$dir/.htaccess");
     }
 
+    /** Fünfzehntes Review von PR #1 */
+    public function testFuenfzehntesReview(): void
+    {
+        $free = array_column(Db::all("SELECT slug FROM werke WHERE status = 'available' AND preis_cent IS NOT NULL AND reserviert_session IS NULL AND aktiv = 1 AND sichtbar = 1 ORDER BY id DESC LIMIT 3"), 'slug');
+        [$a, $b, $d] = $free;
+        $buyer = new Client('198.51.100.130');
+
+        // Zwei Käufe in zwei Tabs: beide gehören diesem Browser
+        $urlA = self::buy($a, $buyer)->json()['url'];
+        self::buy($b, $buyer);
+        $status = $buyer->get('/api/status')->json();
+        $this->assertContains($a, $status['mine']);
+        $this->assertContains($b, $status['mine']);
+        $this->assertNotContains($a, (new Client('198.51.100.131'))->get('/api/status')->json()['mine'], 'fremder Browser');
+        // Werkseite hat den Knopf „Zurück zur begonnenen Zahlung“ (wird per JS eingeblendet)
+        $this->assertStringContainsString('data-resume', (new Client())->get("/werk/$a")->body);
+        // Zurück zur Zahlung von A, obwohl danach B begonnen wurde
+        $this->assertSame($urlA, self::buy($a, $buyer)->json()['url']);
+        // Abbruch von A gibt A frei, B bleibt reserviert und dem Browser zugeordnet
+        $sidA = self::werk($a)['reserviert_session'];
+        $buyer->get("/api/cancel?session_id=$sidA&slug=$a");
+        $this->assertNull(self::werk($a)['reserviert_session']);
+        $this->assertNotNull(self::werk($b)['reserviert_session']);
+        $this->assertSame([$b], $buyer->get('/api/status')->json()['mine']);
+
+        // Abbruch, während die Zahlung gerade abgeschlossen wurde: nicht freigeben
+        $stripeCfg = fn (array $c) => file_get_contents('http://127.0.0.1:' . Stack::STRIPE_PORT . '/__test/config', false, stream_context_create(['http' => ['method' => 'POST', 'header' => 'Content-Type: application/json', 'content' => json_encode($c)]]));
+        $payer = new Client('198.51.100.132');
+        self::buy($d, $payer);
+        $sidD = self::werk($d)['reserviert_session'];
+        // Stripe meldet beim ersten Lesen „open“; beim Schließen ist gerade bezahlt worden (Schließen scheitert)
+        $stripeCfg(['fail_expire' => 'complete']);
+        try {
+            $payer->get("/api/cancel?session_id=$sidD&slug=$d");
+        } finally {
+            $stripeCfg(['fail_expire' => false]);
+        }
+        $this->assertSame($sidD, self::werk($d)['reserviert_session'], 'abgeschlossene Zahlung: Reservierung bleibt bis zum Webhook');
+    }
+
     public function testWiderrufWirdVerschluesseltGespeichert(): void
     {
         $c = new Client('192.0.2.20');

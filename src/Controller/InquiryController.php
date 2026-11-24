@@ -96,6 +96,7 @@ final class InquiryController
             $d['email']
         );
         if (!$stored && !$mail['sent']) {
+            RateLimit::undo($lim['id'] ?? null); // nichts angekommen: zählt nicht gegen die Begrenzung
             self::done(false, 503, 'fehler');
         }
         self::done(true);

@@ -146,6 +146,7 @@ HTML,
             : ['sent' => false, 'reason' => $perIp['ok'] ? 'Limit je Empfänger erreicht' : 'Limit je IP erreicht'];
         if ($slot['ok'] && !$mail['sent']) {
             RateLimit::undo($slot['id'] ?? null);
+            RateLimit::undo($perIp['id'] ?? null); // Mailausfall: auch den Platz je IP zurückgeben
         }
         if ($stored) {
             try {
