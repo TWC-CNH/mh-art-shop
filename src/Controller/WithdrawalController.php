@@ -191,7 +191,9 @@ HTML,
     /** Eingangsbestätigung anzeigen (bis 24 Stunden nach Eingang, nur mit gültigem Prüfwert). */
     private static function showReceipt(string $ref, string $token): never
     {
-        $row = preg_match('/^W-\d{8}-[0-9A-F]{6}$/', $ref) && hash_equals(self::receiptToken($ref), $token)
+        $old = Crypto::pseudonymOld($ref, 'widerruf-beleg');
+        $valid = hash_equals(self::receiptToken($ref), $token) || ($old !== null && hash_equals(substr($old, 0, 32), $token));
+        $row = preg_match('/^W-\d{8}-[0-9A-F]{6}$/', $ref) && $valid
             ? Db::one('SELECT * FROM widerrufe WHERE ref = ? AND eingang > UTC_TIMESTAMP() - INTERVAL 1 DAY', [$ref])
             : null;
         if (!$row) {

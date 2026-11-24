@@ -75,6 +75,17 @@ final class CryptoTest extends TestCase
         $this->assertFalse(Crypto::ready());
     }
 
+    /** Zwanzigstes Review: Werte mit dem alten Schlüssel bleiben nach einem Wechsel nachprüfbar (z. B. Beleg-Links). */
+    public function testPseudonymMitAltemSchluessel(): void
+    {
+        $this->keys(str_repeat('a', 64));
+        $withA = Crypto::pseudonym('W-20261124-ABCDEF', 'widerruf-beleg');
+        $this->assertNull(Crypto::pseudonymOld('W-20261124-ABCDEF', 'widerruf-beleg'), 'ohne alten Schlüssel');
+        $this->keys(str_repeat('b', 64), str_repeat('a', 64));
+        $this->assertNotSame($withA, Crypto::pseudonym('W-20261124-ABCDEF', 'widerruf-beleg'));
+        $this->assertSame($withA, Crypto::pseudonymOld('W-20261124-ABCDEF', 'widerruf-beleg'));
+    }
+
     public function testPseudonymIstGeheimUndStabil(): void
     {
         $this->keys(str_repeat('a', 64));

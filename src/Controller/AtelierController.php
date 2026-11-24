@@ -760,7 +760,8 @@ final class AtelierController
                     }
                     // Nur archivieren, wenn sich die Reservierung seit dem Lesen nicht geändert hat. Ist inzwischen aus einer
                     // entstehenden (pending_) eine echte Stripe-Sitzung geworden, lieber neu versuchen lassen.
-                    $done = Db::run('UPDATE werke SET aktiv = 0, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND reserviert_session <=> ?', [$id, $r['reserviert_session'] ?? null]);
+                    // Wurde die Sitzung eben geschlossen, darf der Webhook „expired“ die Reservierung schon gelöscht haben
+                    $done = Db::run('UPDATE werke SET aktiv = 0, reserviert_bis = NULL, reserviert_session = NULL WHERE id = ? AND (reserviert_session <=> ? OR (? = 1 AND reserviert_session IS NULL))', [$id, $r['reserviert_session'] ?? null, $open !== null ? 1 : 0]);
                     if ($done === 0 && Db::one('SELECT 1 FROM werke WHERE id = ? AND aktiv = 1', [$id])) {
                         Http::redirect('/atelier/werk/' . $id . '?ok=entfernen-bezahlvorgang');
                     }

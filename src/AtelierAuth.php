@@ -57,19 +57,25 @@ final class AtelierAuth
         // Zuletzt benutzte Zeitschritte: jeder Code gilt genau einmal. (Nicht „alles bis zum letzten Schritt“ sperren –
         // sonst würde eine leicht vorgehende Handy-Uhr den nächsten korrekten Code eines zweiten Geräts aussperren.)
         $before = $u['totp_genutzt'];
-        $usedSteps = array_map('intval', array_filter(explode(',', (string) $before), 'strlen'));
-        $step = Totp::verify($secret, $code, null, null, $usedSteps);
-        if ($step === null) {
-            return null;
+        for ($try = 0; $try < 3; $try++) {
+            $usedSteps = array_map('intval', array_filter(explode(',', (string) $before), 'strlen'));
+            $step = Totp::verify($secret, $code, null, null, $usedSteps);
+            if ($step === null) {
+                return null;
+            }
+            $now = Totp::currentStep();
+            $keep = array_values(array_filter([...$usedSteps, $step], fn ($s) => $s >= $now - 2));
+            // Atomar verbrauchen: nur wenn niemand sonst seit dem Lesen einen Code benutzt hat
+            if (Db::run(
+                'UPDATE atelier_benutzer SET totp_genutzt = ?, totp_letzter_schritt = ?, letzter_login = UTC_TIMESTAMP() WHERE id = ? AND totp_genutzt <=> ?',
+                [implode(',', $keep), $step, $u['id'], $before]
+            ) === 1) {
+                return $u;
+            }
+            // Gleichzeitige Anmeldung hat zuerst einen (anderen) Code verbraucht: neu lesen und noch einmal prüfen
+            $before = Db::one('SELECT totp_genutzt FROM atelier_benutzer WHERE id = ?', [$u['id']])['totp_genutzt'] ?? null;
         }
-        $now = Totp::currentStep();
-        $keep = array_values(array_filter([...$usedSteps, $step], fn ($s) => $s >= $now - 2));
-        // Atomar verbrauchen: nur wenn niemand sonst seit dem Lesen einen Code benutzt hat
-        $used = Db::run(
-            'UPDATE atelier_benutzer SET totp_genutzt = ?, totp_letzter_schritt = ?, letzter_login = UTC_TIMESTAMP() WHERE id = ? AND totp_genutzt <=> ?',
-            [implode(',', $keep), $step, $u['id'], $before]
-        );
-        return $used === 1 ? $u : null;
+        return null;
     }
 
     // ---------- Notfall-Codes ----------
@@ -86,7 +92,8 @@ final class AtelierAuth
     private static function useRecoveryCode(array $u, string $code): ?array
     {
         $norm = self::normalizeRecovery($code);
-        foreach (Db::all('SELECT id, code_hash FROM atelier_notfallcodes WHERE benutzer_id = ? AND benutzt IS NULL', [$u['id']]) as $row) {
+        // Nur Codes mit passender Kennung (erste zwei Zeichen) prüfen – meist genau einer statt bis zu zehn Argon2id-Prüfungen
+        foreach (Db::all('SELECT id, code_hash FROM atelier_notfallcodes WHERE benutzer_id = ? AND benutzt IS NULL AND (kennung = ? OR kennung IS NULL)', [$u['id'], substr($norm, 0, 2)]) as $row) {
             if (password_verify($norm, $row['code_hash'])) {
                 if (Db::run('UPDATE atelier_notfallcodes SET benutzt = UTC_TIMESTAMP() WHERE id = ? AND benutzt IS NULL', [$row['id']]) !== 1) {
                     return null; // gleichzeitig schon verbraucht
@@ -116,7 +123,7 @@ final class AtelierAuth
                     $c .= self::RECOVERY_ALPHABET[random_int(0, strlen(self::RECOVERY_ALPHABET) - 1)];
                 }
                 $codes[] = substr($c, 0, 5) . '-' . substr($c, 5);
-                Db::run('INSERT INTO atelier_notfallcodes (benutzer_id, code_hash) VALUES (?, ?)', [$u['id'], self::hashPassword($c)]);
+                Db::run('INSERT INTO atelier_notfallcodes (benutzer_id, code_hash, kennung) VALUES (?, ?, ?)', [$u['id'], self::hashPassword($c), substr($c, 0, 2)]);
             }
         });
         return $codes;

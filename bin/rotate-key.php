@@ -62,3 +62,5 @@ if ($failed) {
 }
 echo "\nFertig, nichts mehr mit altem Schlüssel. DATA_ENCRYPTION_KEY_OLD kann aus der .env entfernt werden.\n";
 echo "Hinweis: Zähler der Missbrauchsbegrenzung beginnen mit dem neuen Schlüssel von vorn (unkritisch).\n";
+echo "Hinweis: Beleg-Links zu Widerrufen der letzten 24 Stunden gelten nur, solange DATA_ENCRYPTION_KEY_OLD gesetzt ist –\n";
+echo "         den alten Schlüssel deshalb frühestens einen Tag nach dem Wechsel entfernen.\n";

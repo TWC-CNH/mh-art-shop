@@ -114,6 +114,20 @@ final class Crypto
         return hash_hmac('sha256', $purpose . '|' . mb_strtolower($value, 'UTF-8'), $secret);
     }
 
+    /** Wie pseudonym(), aber mit dem alten Schlüssel (DATA_ENCRYPTION_KEY_OLD) – für Links von vor einem Schlüsselwechsel. */
+    public static function pseudonymOld(string $value, string $purpose = 'id'): ?string
+    {
+        try {
+            $all = self::keys()['all'];
+        } catch (\Throwable) {
+            return null;
+        }
+        if (count($all) < 2) {
+            return null;
+        }
+        return hash_hmac('sha256', $purpose . '|' . mb_strtolower($value, 'UTF-8'), hash_hkdf('sha256', $all[1], 32, 'mh-pseudonym'));
+    }
+
     private static function b64(string $s): string
     {
         return rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
